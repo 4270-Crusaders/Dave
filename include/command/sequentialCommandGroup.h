@@ -4,28 +4,26 @@
 #include <algorithm>
 
 /**
- * @brief This \refitem Command that runs multiple \refitem Command s in a row.
+ * @brief Command that runs multiple \refitem Commands in sequence (one after another).
  */
-class Sequence : public Command {
+class SequentialCommandGroup : public Command {
 private:
 	size_t index = 0;
 	std::vector<Command*> commands;
+
 public:
 	/**
-	 * Creates a new object that runs a series of commands one after another
+	 * Creates a new SequentialCommandGroup that runs a series of commands one after another.
 	 *
 	 * @param commands Initializer list for sequence Commands
 	 */
-	Sequence(const std::initializer_list<Command*> commands) : commands(commands) {
-
-	}
+	SequentialCommandGroup(const std::initializer_list<Command*> commands) : commands(commands) {}
 
 	/**
 	 * @brief Initializes the first command
 	 */
 	void initialize() override {
 		index = 0;
-
 		commands[0]->initialize();
 	}
 
@@ -47,16 +45,16 @@ public:
 	/**
 	 * Finishes when the last command is finished
 	 *
-	 * @return Checks if it has completed the last command
+	 * @return true if the last command has completed
 	 */
 	bool isFinished() override {
-		return this->index >= commands.size();
+		return index >= commands.size();
 	}
 
 	/**
-	 * @brief Ends the correct Command when the Sequence is interrupted
+	 * @brief Ends the current command when the SequentialCommandGroup is interrupted
 	 *
-	 * @param interrupted End the last command if it was interrupted
+	 * @param interrupted End the current command with interrupted=true if the group was interrupted
 	 */
 	void end(const bool interrupted) override {
 		if (index < commands.size()) {
@@ -65,11 +63,11 @@ public:
 	}
 
 	/**
-	 * @brief Returns the requirements the Sequence needs for each step.
+	 * @brief Returns the union of requirements of all commands in the sequence.
 	 *
-	 * @return Returns a set of all the requirements of all the Commands in the sequence
+	 * @return Requirements needed for each step (all subsystems used by any command in the sequence)
 	 */
-	std::vector<Subsystem *> getRequirements() override {
+	std::vector<Subsystem*> getRequirements() override {
 		std::vector<Subsystem*> requirements;
 
 		for (auto* command : commands) {
@@ -84,6 +82,6 @@ public:
 	}
 };
 
-inline Command *Command::andThen(Command *other) {
-	return new Sequence({this, other});
+inline Command* Command::andThen(Command* other) {
+	return new SequentialCommandGroup({this, other});
 }

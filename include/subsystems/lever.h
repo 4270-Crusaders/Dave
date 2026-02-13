@@ -60,15 +60,15 @@ public:
 		switch(state) {
 			case LeverState::Store:
 				leverPiston1.set_value(false);
-				leverPiston2.set_value(false);
+				leverPiston2.set_value(true);
 				break;
 			case LeverState::Up:
 				leverPiston1.set_value(true);
-				leverPiston2.set_value(false);
+				leverPiston2.set_value(true);
 				break;
 			case LeverState::Low:
 				leverPiston1.set_value(false);
-				leverPiston2.set_value(true);
+				leverPiston2.set_value(false);
 				break;
 		}
 		currentState = state;

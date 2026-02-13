@@ -3,9 +3,9 @@
 #include "command.h"
 
 /**
- * @brief Schedules a \refitem Command as a "proxy" while tracking the progress for \refitem Sequence
+ * @brief Schedules a \refitem Command as a "proxy" while tracking the progress for \refitem SequentialCommandGroup
  *
- * @warning Only use when you need to free a \refitem Subsystem before or after it is used in a \refitem Sequence. This command
+ * @warning Only use when you need to free a \refitem Subsystem before or after it is used in a \refitem SequentialCommandGroup. This command
  * should only be used when you really KNOW there is no other way to complete the action.
  */
 class ProxyCommand : public Command {
@@ -35,7 +35,7 @@ public:
 	}
 
 	/**
-	 * @brief Creates the isFinished behavior to track the progress for \refitem Sequence
+	 * @brief Creates the isFinished behavior to track the progress for \refitem SequentialCommandGroup
 	 * @return Returns true if the command is no longer scheduled
 	 */
 	bool isFinished() override { return command == nullptr || !command->scheduled(); }

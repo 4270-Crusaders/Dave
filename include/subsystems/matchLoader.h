@@ -22,7 +22,8 @@ public:
 		Up,
 		Down
 	}
-	currentState = MatchLoaderState::Down;
+	
+	currentState = MatchLoaderState::Up;
 	/**
 	 * Construct a new lever subsystem with pro::adi::Pneumatics object
 	 *
@@ -55,10 +56,10 @@ public:
 	void setState(const MatchLoaderState state) {
 		switch(state) {
 			case MatchLoaderState::Up:
-				MatchLoaderPiston.set_value(true);
+				MatchLoaderPiston.set_value(false);
 				break;
 			case MatchLoaderState::Down:
-				MatchLoaderPiston.set_value(false);
+				MatchLoaderPiston.set_value(true);
 				break;
 		}
 		currentState = state;

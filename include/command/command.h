@@ -152,10 +152,10 @@ public:
 	[[nodiscard]] bool scheduled() const;
 
 	/**
-	 * @brief Create a \refitem Sequence with 2 commands
+	 * @brief Create a \refitem SequentialCommandGroup with 2 commands
 	 *
 	 * @param other The command to run after the current command
-	 * @return A \refitem Sequence with this running first and other running after
+	 * @return A \refitem SequentialCommandGroup with this running first and other running after
 	 */
 	Command *andThen(Command *other);
 

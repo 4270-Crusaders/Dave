@@ -1,91 +1,109 @@
+#pragma once
+
+#include "command/command.h"
+#include "command/runCommand.h"
 #include "command/subsystem.h"
+#include "lemlib/asset.hpp"
 #include "lemlib/chassis/chassis.hpp"
+#include "lemlib/pose.hpp"
 #include "pros/imu.hpp"
 #include "pros/motor_group.hpp"
 #include "pros/rotation.hpp"
 
+class CommandController;
+
+/**
+ * Drive subsystem
+ *
+ * Wraps the lemlib chassis: odometry, driver control (arcade/tank/curvature),
+ * and autonomous motions (moveToPoint, turnToHeading, follow path). Use
+ * command factories for use in SequentialCommandGroup / autonomous.
+ */
 class Drive : public Subsystem {
-private:
-    // motors
-    pros::MotorGroup* leftMotors;
-    pros::MotorGroup* rightMotors;
-    pros::Imu* imu;
-
-    // lemlib components (as pointers for lazy initialization)
-    lemlib::Drivetrain* drivetrain = nullptr;
-    lemlib::ControllerSettings* linearController = nullptr;
-    lemlib::ControllerSettings* angularController = nullptr;
-    pros::Rotation* horizontalEnc = nullptr;
-    pros::Rotation* verticalEnc = nullptr;
-    lemlib::TrackingWheel* horizontal = nullptr;
-    lemlib::TrackingWheel* vertical = nullptr;
-    lemlib::OdomSensors* sensors = nullptr;
-    lemlib::ExpoDriveCurve* throttleCurve = nullptr;
-    lemlib::ExpoDriveCurve* steerCurve = nullptr;
-    lemlib::Chassis* chassis = nullptr;
-
 public:
-    /**
-     * Construct a new Drive subsystem with left and right motor groups
-     *
-     * @param leftMotorGroup motor group for the left side of the drivetrain
-     * @param rightMotorGroup motor group for the right side of the drivetrain
-     * @param imu IMU sensor for the drivetrain
-     */
-    explicit Drive(pros::MotorGroup& leftMotorGroup, pros::MotorGroup& rightMotorGroup, pros::Imu& imuSensor)
-    : leftMotors(&leftMotorGroup), rightMotors(&rightMotorGroup), imu(&imuSensor) {
-        
-        // Initialize tracking wheel encoders
-        horizontalEnc = new pros::Rotation(6);
-        verticalEnc = new pros::Rotation(-5);
-        
-        // Initialize tracking wheels
-        horizontal = new lemlib::TrackingWheel(horizontalEnc, 2.75, -3.25);
-        vertical = new lemlib::TrackingWheel(verticalEnc, 2.75, -0.375);
-        
-        // Initialize drivetrain
-        drivetrain = new lemlib::Drivetrain(leftMotors,
-                                            rightMotors,
-                                            10,
-                                            lemlib::Omniwheel::NEW_275,
-                                            450,
-                                            2);
-        
-        // Initialize controllers
-        linearController = new lemlib::ControllerSettings(10, 0, 3, 3, 1, 100, 3, 500, 20);
-        angularController = new lemlib::ControllerSettings(2, 0, 10, 3, 1, 100, 3, 500, 0);
-        
-        // Initialize sensors
-        sensors = new lemlib::OdomSensors(vertical, nullptr, horizontal, nullptr, imu);
-        
-        // Initialize drive curves
-        throttleCurve = new lemlib::ExpoDriveCurve(3, 10, 1.019);
-        steerCurve = new lemlib::ExpoDriveCurve(3, 10, 1.019);
-        
-        // Create chassis
-        chassis = new lemlib::Chassis(*drivetrain, *linearController, *angularController, *sensors, throttleCurve, steerCurve);
-    }
+	Drive();
 
-    lemlib::Chassis* getChassis() {
-        return chassis;
-    }
-    
-    void periodic() override {
-        // EX: debugging tasks
-    }
+	void periodic() override;
 
-    // Free any additional resources that are needed.
-    ~Drive() override {
-        delete chassis;
-        delete drivetrain;
-        delete linearController;
-        delete angularController;
-        delete horizontalEnc;
-        delete verticalEnc;
-        delete horizontal;
-        delete vertical;
-        delete sensors;
-        delete throttleCurve;
-        delete steerCurve;
-    }
+	// ----- Driver control -----
+	/** Arcade: throttle (e.g. left Y) and turn (e.g. right X), [-127, 127]. */
+	void arcade(double throttle, double turn);
+	/** Tank: left and right stick, [-127, 127]. */
+	void tank(int left, int right, bool disableDriveCurve = false);
+	/** Curvature: throttle and curvature (radius), [-127, 127]. */
+	void curvature(int throttle, int turn, bool disableDriveCurve = false);
+
+	/** Default command for teleop: arcade from controller. */
+	RunCommand* arcadeCommand(CommandController* controller);
+	RunCommand* tankCommand(CommandController* controller, bool disableDriveCurve);
+	RunCommand* curvatureCommand(CommandController* controller, bool disableDriveCurve);
+
+	// ----- Calibration & pose -----
+	void calibrate(bool calibrateIMU = true);
+	/** Get current pose (theta in degrees by default). */
+	lemlib::Pose getPose(bool radians = false, bool standardPos = false);
+	/** Set pose (theta in degrees by default). */
+	void setPose(float x, float y, float theta, bool radians = false);
+	void setPose(lemlib::Pose pose, bool radians = false);
+	/** Reset x,y to 0 without changing heading. */
+	void resetLocalPosition();
+
+	// ----- Autonomous motions (async by default; use commands to wait) -----
+	void moveToPoint(float x, float y, int timeout,
+	                 lemlib::MoveToPointParams params = {}, bool async = true);
+	void moveToPose(float x, float y, float theta, int timeout,
+	                lemlib::MoveToPoseParams params = {}, bool async = true);
+	void turnToHeading(float theta, int timeout,
+	                   lemlib::TurnToHeadingParams params = {}, bool async = true);
+	void turnToPoint(float x, float y, int timeout,
+	                 lemlib::TurnToPointParams params = {}, bool async = true);
+	void swingToHeading(float theta, lemlib::DriveSide lockedSide, int timeout,
+	                    lemlib::SwingToHeadingParams params = {}, bool async = true);
+	void swingToPoint(float x, float y, lemlib::DriveSide lockedSide, int timeout,
+	                  lemlib::SwingToPointParams params = {}, bool async = true);
+	void follow(const asset& path, float lookahead, int timeout,
+	            bool forwards = true, bool async = true);
+
+	// ----- Motion state & control -----
+	void waitUntilDone();
+	void waitUntil(float dist);
+	bool isInMotion() const;
+	void cancelMotion();
+	void cancelAllMotions();
+
+	void setBrakeMode(pros::motor_brake_mode_e mode);
+
+	// ----- Command factories (return commands that require this subsystem and finish when motion done) -----
+	Command* moveToPointCommand(float x, float y, int timeout,
+	                            lemlib::MoveToPointParams params = {});
+	Command* moveToPoseCommand(float x, float y, float theta, int timeout,
+	                          lemlib::MoveToPoseParams params = {});
+	Command* turnToHeadingCommand(float theta, int timeout,
+	                              lemlib::TurnToHeadingParams params = {});
+	Command* turnToPointCommand(float x, float y, int timeout,
+	                            lemlib::TurnToPointParams params = {});
+	Command* swingToHeadingCommand(float theta, lemlib::DriveSide lockedSide, int timeout,
+	                                lemlib::SwingToHeadingParams params = {});
+	Command* swingToPointCommand(float x, float y, lemlib::DriveSide lockedSide, int timeout,
+	                             lemlib::SwingToPointParams params = {});
+	Command* followPathCommand(const asset& path, float lookahead, int timeout,
+	                           bool forwards = true);
+
+	~Drive() override = default;
+
+private:
+	pros::MotorGroup leftMotors;
+	pros::MotorGroup rightMotors;
+	pros::Imu imu;
+	pros::Rotation horizontalEnc;
+	pros::Rotation verticalEnc;
+	lemlib::TrackingWheel horizontal;
+	lemlib::TrackingWheel vertical;
+	lemlib::Drivetrain drivetrain;
+	lemlib::ControllerSettings linearController;
+	lemlib::ControllerSettings angularController;
+	lemlib::OdomSensors sensors;
+	lemlib::ExpoDriveCurve throttleCurve;
+	lemlib::ExpoDriveCurve steerCurve;
+	lemlib::Chassis chassis;
 };

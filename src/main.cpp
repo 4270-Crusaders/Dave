@@ -1,4 +1,5 @@
 #include "main.h"
+#include "command/commandScheduler.h"
 #include "command/parallelCommandGroup.h"
 #include "lemlib/api.hpp" // IWYU pragma: keep
 #include "pros/adi.hpp"
@@ -32,6 +33,107 @@ Drive *drive;
 	}
 }
 
+void configureBindings(){
+	// Intake Sequencewhile L2 is true
+	primary.getTrigger(DIGITAL_L2)->onTrue(
+		new ParallelCommandGroup(
+			{
+				intake->pctCommand(1.0),
+				lever->setCommand(Lever::LeverState::Store),
+			}
+		)
+	)->onFalse(
+		new ParallelCommandGroup(
+			{
+				intake->pctCommand(0.0),
+				lever->setCommand(Lever::LeverState::Store)
+			}
+		)
+	);
+
+	// Intake with MatchLoader Sequence while L1 is true
+	primary.getTrigger(DIGITAL_L1)->onTrue(
+		new ParallelCommandGroup(
+			{
+				intake->pctCommand(1.0),
+				lever->setCommand(Lever::LeverState::Store),
+				matchLoader->setCommand(MatchLoader::MatchLoaderState::Down),
+			}
+		)
+	)->onFalse(
+		new ParallelCommandGroup(
+			{
+				intake->pctCommand(0.0),
+				lever->setCommand(Lever::LeverState::Store),
+				matchLoader->setCommand(MatchLoader::MatchLoaderState::Up)
+			}
+		)
+	);
+
+	// HighGoal Sequence while R1 is true
+	primary.getTrigger(DIGITAL_R2)->onTrue(
+		new ParallelCommandGroup(
+			{
+				intake->pctCommand(1.0),
+				lever->setCommand(Lever::LeverState::Up),
+				matchLoader->setCommand(MatchLoader::MatchLoaderState::Up),
+			}
+		)
+	)->onFalse(
+		new ParallelCommandGroup(
+			{
+				intake->pctCommand(0.0),
+				lever->setCommand(Lever::LeverState::Store),
+				matchLoader->setCommand(MatchLoader::MatchLoaderState::Up)
+			}
+		)
+	);
+
+	// LowGoal Sequence while R2 is true
+	primary.getTrigger(DIGITAL_R1)->onTrue(
+		new ParallelCommandGroup(
+			{
+				intake->pctCommand(0.5),
+				lever->setCommand(Lever::LeverState::Low),
+				matchLoader->setCommand(MatchLoader::MatchLoaderState::Up),
+			}
+		)
+	)
+	->onFalse(
+		new ParallelCommandGroup(
+			{
+				intake->pctCommand(0.0),
+				lever->setCommand(Lever::LeverState::Store),
+				matchLoader->setCommand(MatchLoader::MatchLoaderState::Up)
+			}
+		)
+	);
+
+	// Outtake while A is true
+	primary.getTrigger(DIGITAL_Y)->onTrue(
+		new ParallelCommandGroup({
+				intake->pctCommand(-1.0),
+				lever->setCommand(Lever::LeverState::Up),
+				matchLoader->setCommand(MatchLoader::MatchLoaderState::Up),
+			}
+		)
+	)->onFalse(
+		new ParallelCommandGroup(
+			{
+				intake->pctCommand(0.0),
+				lever->setCommand(Lever::LeverState::Store),
+				matchLoader->setCommand(MatchLoader::MatchLoaderState::Up)
+			}
+		)
+	);
+
+	primary.getTrigger(DIGITAL_RIGHT)->onTrue(
+		descoreMech->setCommand(DescoreMech::DescoreState::Down)
+	)->onFalse(
+		descoreMech->setCommand(DescoreMech::DescoreState::Up)
+	);
+}
+
 /**
  * Runs initialization code. This occurs as soon as the program is started.
  *
@@ -42,75 +144,23 @@ void initialize() {
 	pros::lcd::initialize();
 	// Start the command scheduler task
 	pros::Task commandSchedulerTask(update_loop);
-	// Create subsystem instances
-	// Create motor groups and IMU first
-    pros::MotorGroup leftMotors({-11, 12, -13}, pros::MotorGearset::blue);
-    pros::MotorGroup rightMotors({18,19,-20}, pros::MotorGearset::blue);
-    pros::Imu driveImu(16);
-
     // Create subsystem instances
-    drive = new Drive(leftMotors, rightMotors, driveImu);
-
-	intake = new Intake(pros::Motor(14),pros::Motor(-17));
+	intake = new Intake(pros::Motor(14), pros::Motor(-17));
 	descoreMech = new DescoreMech(pros::adi::Pneumatics('G', false));
 	matchLoader = new MatchLoader(pros::adi::Pneumatics('H', false));
 	lever = new Lever(pros::adi::Pneumatics('A', false), pros::adi::Pneumatics('B', false));
-	
-	// pros::MotorGroup leftMotors({-11, 12, -13}, pros::MotorGearset::blue);
-	// pros::MotorGroup rightMotors({18,19,-20}, pros::MotorGearset::blue);
+	drive = new Drive();
+	drive->calibrate();
 
 	// Register subsystems with the command scheduler
 	CommandScheduler::registerSubsystem(intake, intake->pctCommand(0.0));
 	CommandScheduler::registerSubsystem(descoreMech, descoreMech->setCommand(DescoreMech::DescoreState::Up));
-	CommandScheduler::registerSubsystem(matchLoader, matchLoader->setCommand(MatchLoader::MatchLoaderState::Down));
+	CommandScheduler::registerSubsystem(matchLoader, matchLoader->setCommand(MatchLoader::MatchLoaderState::Up));
 	CommandScheduler::registerSubsystem(lever, lever->setCommand(Lever::LeverState::Store));
-	
-	// Intake Sequencewhile L1 is true
-	primary.getTrigger(DIGITAL_L1)->whileTrue(new ParallelCommandGroup({
-		intake->pctCommand(1.0),
-		lever->setCommand(Lever::LeverState::Store),
-		matchLoader->setCommand(MatchLoader::MatchLoaderState::Up),
-	}));
+	CommandScheduler::registerSubsystem(drive, drive->arcadeCommand(&primary));
 
-	// Intake with MatchLoader Sequence while L2 is true
-	primary.getTrigger(DIGITAL_L2)->whileTrue(new ParallelCommandGroup({
-		intake->pctCommand(1.0),
-		lever->setCommand(Lever::LeverState::Store),
-		matchLoader->setCommand(MatchLoader::MatchLoaderState::Down),
-	}));
-
-	// HighGoal Sequence while R1 is true
-	primary.getTrigger(DIGITAL_R1)->whileTrue(new ParallelCommandGroup({
-		intake->pctCommand(1.0),
-		lever->setCommand(Lever::LeverState::Up),
-		matchLoader->setCommand(MatchLoader::MatchLoaderState::Up),
-	}));
-
-	// LowGoal Sequence while R2 is true
-	primary.getTrigger(DIGITAL_R2)->whileTrue(new ParallelCommandGroup({
-		intake->pctCommand(1.0),
-		lever->setCommand(Lever::LeverState::Low),
-		matchLoader->setCommand(MatchLoader::MatchLoaderState::Up),
-	}));
-
-	// Outtake while A is true
-	primary.getTrigger(DIGITAL_A)->whileTrue(new ParallelCommandGroup({
-		intake->pctCommand(-1.0),
-		lever->setCommand(Lever::LeverState::Up),
-		matchLoader->setCommand(MatchLoader::MatchLoaderState::Up),
-	}));
-
-
-	// // Toggle pctCommand to run while R1 turns to ture
-	// primary.getTrigger(DIGITAL_R2)->toggleOnTrue(intake->pctCommand(1.0));
-
-	// // Dejam mode, causes the intake to move back and forth quickly
-	// primary.getTrigger(DIGITAL_A)->whileTrue(
-	// 													intake->pctCommand(-1.0)
-	// 													->withTimeout(300_ms)
-	// 													->andThen(intake->pctCommand(1.0)
-	// 													->withTimeout(300_ms))
-	// 													->repeatedly());
+	// configureBindings
+	configureBindings();
 }
 
 
@@ -158,9 +208,4 @@ void autonomous() {}
  * operator control task will be stopped. Re-enabling the robot will restart the
  * task, not resume it from where it left off.
  */
-void opcontrol() {
-	while (true) {
-		drive->getChassis()->arcade(primary.get_analog(pros::E_CONTROLLER_ANALOG_LEFT_Y), primary.get_analog(pros::E_CONTROLLER_ANALOG_RIGHT_X));
-		pros::delay(10);
-	}
-}
+void opcontrol() {}

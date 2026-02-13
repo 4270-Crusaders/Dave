@@ -13,7 +13,7 @@
 #include "repeatCommand.h"
 #include "runCommand.h"
 #include "scheduleCommand.h"
-#include "sequence.h"
+#include "sequentialCommandGroup.h"
 #include "subsystem.h"
 #include "trigger.h"
 #include "waitCommand.h"
