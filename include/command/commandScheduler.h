@@ -103,9 +103,9 @@ public:
 	static void run() {
 		CommandScheduler& instance = getInstance();
 
-		// Run the periodic for all registered subsystems
-		for (const auto subsystem: instance.subsystems | std::ranges::views::keys) {
-			subsystem->periodic();
+		// Run the periodic for all registered subsystems (plain loop for VEX/embedded compatibility)
+		for (auto& pair : instance.subsystems) {
+			pair.first->periodic();
 		}
 
 		// Poll user set event loops

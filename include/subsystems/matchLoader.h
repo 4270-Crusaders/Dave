@@ -39,11 +39,7 @@ public:
 	 * @note Periodic is very useful tasks such as PID that need to run every frame, but the target is only set once.
 	 */
 	void periodic() override {
-		// EX: debugging tasks
-		std::cout << "Match Loader Piston: " << MatchLoaderPiston.is_extended() << std::endl;
-
-		// Also:
-		// Updating PID for something like a flywheel or odometry for a drivetrain subsystem
+		// Optional: pros::lcd::print for debugging (avoid std::cout on VEX—can cause data abort)
 	}
 
 	// Create member functions to actuate the subsystem

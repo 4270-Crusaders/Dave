@@ -1,5 +1,6 @@
 #include "main.h"
 #include "command/commandScheduler.h"
+#include "command/instantCommand.h"
 #include "command/parallelCommandGroup.h"
 #include "lemlib/api.hpp" // IWYU pragma: keep
 #include "pros/adi.hpp"
@@ -11,7 +12,7 @@ Intake *intake;
 DescoreMech *descoreMech;
 MatchLoader *matchLoader;
 Lever *lever;
-Drive *drive;
+Drive *chassis;
 
 /**
  * @brief This function runs the update scheduler at each frame with a consistent schedule
@@ -33,7 +34,27 @@ Drive *drive;
 	}
 }
 
-void configureBindings(){
+/**
+ * Runs initialization code. This occurs as soon as the program is started.
+ *
+ * All other competition modes are blocked by initialize; it is recommended
+ * to keep execution time for this mode under a few seconds.
+ */
+void initialize() {
+	// Create subsystem instances first (before scheduler runs)
+	intake = new Intake(pros::Motor(14), pros::Motor(-17));
+	descoreMech = new DescoreMech(pros::adi::Pneumatics('G', false));
+	matchLoader = new MatchLoader(pros::adi::Pneumatics('H', false));
+	lever = new Lever(pros::adi::Pneumatics('A', false), pros::adi::Pneumatics('B', false));
+	chassis = new Drive();
+
+	// Register subsystems with the command scheduler
+	CommandScheduler::registerSubsystem(intake, intake->pctCommand(0.0));
+	CommandScheduler::registerSubsystem(descoreMech, descoreMech->setCommand(DescoreMech::DescoreState::Up));
+	CommandScheduler::registerSubsystem(matchLoader, matchLoader->setCommand(MatchLoader::MatchLoaderState::Up));
+	CommandScheduler::registerSubsystem(lever, lever->setCommand(Lever::LeverState::Store));
+	CommandScheduler::registerSubsystem(chassis, chassis->arcadeCommand(&primary));
+
 	// Intake Sequencewhile L2 is true
 	primary.getTrigger(DIGITAL_L2)->onTrue(
 		new ParallelCommandGroup(
@@ -132,35 +153,13 @@ void configureBindings(){
 	)->onFalse(
 		descoreMech->setCommand(DescoreMech::DescoreState::Up)
 	);
-}
 
-/**
- * Runs initialization code. This occurs as soon as the program is started.
- *
- * All other competition modes are blocked by initialize; it is recommended
- * to keep execution time for this mode under a few seconds.
- */
-void initialize() {
-	pros::lcd::initialize();
-	// Start the command scheduler task
+	// Start the command scheduler task only after everything is ready (avoids data abort from racing init)
 	pros::Task commandSchedulerTask(update_loop);
-    // Create subsystem instances
-	intake = new Intake(pros::Motor(14), pros::Motor(-17));
-	descoreMech = new DescoreMech(pros::adi::Pneumatics('G', false));
-	matchLoader = new MatchLoader(pros::adi::Pneumatics('H', false));
-	lever = new Lever(pros::adi::Pneumatics('A', false), pros::adi::Pneumatics('B', false));
-	drive = new Drive();
-	drive->calibrate();
 
-	// Register subsystems with the command scheduler
-	CommandScheduler::registerSubsystem(intake, intake->pctCommand(0.0));
-	CommandScheduler::registerSubsystem(descoreMech, descoreMech->setCommand(DescoreMech::DescoreState::Up));
-	CommandScheduler::registerSubsystem(matchLoader, matchLoader->setCommand(MatchLoader::MatchLoaderState::Up));
-	CommandScheduler::registerSubsystem(lever, lever->setCommand(Lever::LeverState::Store));
-	CommandScheduler::registerSubsystem(drive, drive->arcadeCommand(&primary));
-
-	// configureBindings
-	configureBindings();
+	// Calibrate IMU (disable if you get data abort—check IMU port 16 and wiring)
+	chassis->calibrate(true);
+	
 }
 
 
@@ -180,7 +179,9 @@ void disabled() {}
  * This task will exit when the robot is enabled and autonomous or opcontrol
  * starts.
  */
-void competition_initialize() {}
+void competition_initialize() {
+}
+
 
 /**
  * Runs the user autonomous code. This function will be started in its own task
@@ -193,7 +194,18 @@ void competition_initialize() {}
  * will be stopped. Re-enabling the robot will restart the task, not re-start it
  * from where it left off.
  */
-void autonomous() {}
+
+void autonomous() {
+	lever->setCommand(Lever::LeverState::Store)->schedule();
+	chassis->setPose(0,0,0);
+	chassis->moveToPoint(0, 15, 500, {.minSpeed=100});
+	chassis->moveToPoint(0, 24, 3000, {.minSpeed=50});
+	chassis->waitUntilDone();
+	chassis->turnToHeading(-90, 800);
+	matchLoader->setCommand(MatchLoader::MatchLoaderState::Down)->schedule();
+	intake->pctCommand(1)->schedule();
+	chassis->moveToPoseCommand(-10, 24,0, 2000, {.minSpeed=60})->schedule();
+}
 
 /**
  * Runs the operator control code. This function will be started in its own task
