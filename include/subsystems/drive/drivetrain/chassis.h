@@ -3,6 +3,7 @@
 #include "subsystems/drive/drivetrain/math.h"
 #include "subsystems/drive/drivetrain/pid.h"
 #include "subsystems/drive/drivetrain/types.h"
+#include "subsystems/drive/control/ControlPrimitives.h"
 #include "subsystems/drive/odometry/OdomFusion.h"
 #include "pros/imu.hpp"
 #include "pros/misc.hpp"
@@ -75,6 +76,8 @@ public:
 	// Motions (async unless async=false)
 	void moveToPoint(double x, double y, int timeoutMs, MoveToPointParams params = {}, bool async = true);
 	void moveToPose(double x, double y, double theta, int timeoutMs, MoveToPoseParams params = {}, bool async = true);
+	void moveToPoseBoomerang(double x, double y, double theta, int timeoutMs, MoveToPoseBoomerangParams params = {},
+	                         bool async = true);
 	void turnToHeading(double theta, int timeoutMs, TurnToHeadingParams params = {}, bool async = true);
 	void turnToPoint(double x, double y, int timeoutMs, TurnToPointParams params = {}, bool async = true);
 	void swingToHeading(double theta, DriveSide lockedSide, int timeoutMs, SwingToHeadingParams params = {},
@@ -97,6 +100,7 @@ private:
 		None,
 		MoveToPoint,
 		MoveToPose,
+		MoveToPoseBoomerang,
 		TurnToHeading,
 		TurnToPoint,
 		SwingHeading,
@@ -111,6 +115,7 @@ private:
 
 	void stepMoveToPoint(double dt);
 	void stepMoveToPose(double dt);
+	void stepMoveToPoseBoomerang(double dt);
 	void stepTurnToHeading(double dt);
 	void stepTurnToPoint(double dt);
 	void stepSwingHeading(double dt);
@@ -226,6 +231,7 @@ private:
 
 	MoveToPointParams movePointParams_{};
 	MoveToPoseParams movePoseParams_{};
+	MoveToPoseBoomerangParams movePoseBoomerangParams_{};
 	TurnToHeadingParams turnHeadingParams_{};
 	TurnToPointParams turnPointParams_{};
 	SwingToHeadingParams swingHeadingParams_{};
@@ -240,6 +246,10 @@ private:
 	Pid distPid_{3.5, 0.0, 0.12, 4000.0};
 	Pid headingPid_{5.5, 0.0, 0.35, 3000.0};
 	Pid turnPid_{6.0, 0.0, 0.4, 3000.0};
+
+	// Boomerang motion internal state (slew tracking).
+	double movePoseBoomerangPrevLat_ = 0.0;
+	double movePoseBoomerangPrevAng_ = 0.0;
 
 	static constexpr double kPosTolIn = 1.75;
 	static constexpr double kAngleTolRad = 2.5 * kPi / 180.0;

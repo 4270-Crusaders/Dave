@@ -328,6 +328,8 @@ inline void drivetrain::Chassis::startMotion(Motion m, int timeoutMs) {
 	distPid_.reset();
 	headingPid_.reset();
 	turnPid_.reset();
+	movePoseBoomerangPrevLat_ = 0.0;
+	movePoseBoomerangPrevAng_ = 0.0;
 }
 
 inline void drivetrain::Chassis::finishMotion() {
@@ -384,6 +386,9 @@ inline void drivetrain::Chassis::tick() {
 	case Motion::MoveToPose:
 		stepMoveToPose(dt);
 		break;
+	case Motion::MoveToPoseBoomerang:
+		stepMoveToPoseBoomerang(dt);
+		break;
 	case Motion::TurnToHeading:
 		stepTurnToHeading(dt);
 		break;
@@ -422,6 +427,20 @@ inline void drivetrain::Chassis::moveToPose(double x, double y, double theta, in
 	movePoseParams_ = params;
 	movePosePhase_ = 0;
 	startMotion(Motion::MoveToPose, timeoutMs);
+	if (!async) {
+		waitUntilDone();
+	}
+}
+
+inline void drivetrain::Chassis::moveToPoseBoomerang(double x, double y, double theta, int timeoutMs,
+                                                     MoveToPoseBoomerangParams params, bool async) {
+	targetX_ = x;
+	targetY_ = y;
+	targetTheta_ = degToRad(theta);
+	movePoseBoomerangParams_ = params;
+	movePoseBoomerangPrevLat_ = 0.0;
+	movePoseBoomerangPrevAng_ = 0.0;
+	startMotion(Motion::MoveToPoseBoomerang, timeoutMs);
 	if (!async) {
 		waitUntilDone();
 	}
@@ -542,6 +561,112 @@ inline void drivetrain::Chassis::stepMoveToPose(double dt) {
 	double turn = turnPid_.update(err, dt);
 	turn = clampd(turn, -maxT, maxT);
 	applyTank(clampVolt(static_cast<int>(std::lround(-turn))), clampVolt(static_cast<int>(std::lround(turn))));
+}
+
+inline void drivetrain::Chassis::stepMoveToPoseBoomerang(double dt) {
+	// Port of LemLib moveToPose core idea (carrot point + combined lateral/angular control).
+	// Outputs are in PROS motor units [-127,127].
+	const double dx = targetX_ - x_;
+	const double dy = targetY_ - y_;
+	const double dist = std::hypot(dx, dy);
+	if (dist < movePoseBoomerangParams_.settleDistIn &&
+	    std::abs(normalizeAngleRad(targetTheta_ - headingRad())) < degToRad(movePoseBoomerangParams_.settleAngleDeg)) {
+		finishMotion();
+		return;
+	}
+
+	// Motion chaining: if user requests early exit and we've crossed the target plane, finish.
+	if (movePoseBoomerangParams_.earlyExitRangeIn > 0.0) {
+		const double tx = x_ - targetX_;
+		const double ty = y_ - targetY_;
+		const double plane = tx * std::cos(targetTheta_) + ty * std::sin(targetTheta_);
+		if (plane > static_cast<double>(movePoseBoomerangParams_.earlyExitRangeIn)) {
+			finishMotion();
+			return;
+		}
+	}
+
+	// Carrot point: when far, offset behind the target along its heading.
+	const double close = dist < movePoseBoomerangParams_.closeRangeIn ? 1.0 : 0.0;
+	const double lead = movePoseBoomerangParams_.lead;
+	const double carrotX = close > 0.5 ? targetX_ : (targetX_ - std::cos(targetTheta_) * (lead * dist));
+	const double carrotY = close > 0.5 ? targetY_ : (targetY_ - std::sin(targetTheta_) * (lead * dist));
+
+	// Lateral error: distance * cos(angle error between heading and direction-to-carrot).
+	const double aim = std::atan2(carrotY - y_, carrotX - x_);
+	const double hErr = normalizeAngleRad(aim - headingRad());
+	double lateralErr = dist;
+	const double scalar = std::cos(hErr);
+	lateralErr *= (close > 0.5) ? scalar : (scalar >= 0 ? 1.0 : -1.0);
+
+	// Angular error: when far, face carrot; when close, face final theta.
+	const double desiredHeading = (close > 0.5) ? targetTheta_ : aim;
+	const double angErr = normalizeAngleRad(desiredHeading - headingRad());
+
+	// Controller outputs.
+	const double maxLat = static_cast<double>(movePoseBoomerangParams_.maxLateralSpeed);
+	const double minLat = static_cast<double>(movePoseBoomerangParams_.minLateralSpeed);
+	const double maxAng = static_cast<double>(movePoseBoomerangParams_.maxAngularSpeed);
+
+	double angularOut = turnPid_.update(angErr, dt);
+	angularOut = clampd(angularOut, -maxAng, maxAng);
+
+	double lateralOut = distPid_.update(lateralErr, dt);
+	lateralOut = clampd(lateralOut, -maxLat, maxLat);
+
+	// Slew (only while not close).
+	if (close < 0.5) {
+		lateralOut = drive_control::slew(lateralOut, movePoseBoomerangPrevLat_, movePoseBoomerangParams_.lateralSlew,
+		                                 dt);
+		angularOut = drive_control::slew(angularOut, movePoseBoomerangPrevAng_, movePoseBoomerangParams_.angularSlew,
+		                                 dt);
+	}
+	movePoseBoomerangPrevLat_ = lateralOut;
+	movePoseBoomerangPrevAng_ = angularOut;
+
+	// Prevent moving in the wrong direction while far (LemLib behavior).
+	if (close < 0.5) {
+		if (movePoseBoomerangParams_.reversed) {
+			lateralOut = std::min(lateralOut, 0.0);
+		} else {
+			lateralOut = std::max(lateralOut, 0.0);
+		}
+	}
+
+	// Minimum speed (only while not close).
+	if (close < 0.5) {
+		lateralOut = drive_control::constrainPower(lateralOut, maxLat, minLat);
+	}
+
+	// Drift / slip cap (optional).
+	if (movePoseBoomerangParams_.driftCompensation > 0.0) {
+		// Radius from signed tangent arc curvature (Pilons / LemLib).
+		const double tx = carrotX - x_;
+		const double ty = carrotY - y_;
+		const double th = headingRad();
+		const double side = (std::sin(th) * tx - std::cos(th) * ty) >= 0.0 ? 1.0 : -1.0;
+		const double a = -std::tan(th);
+		const double c = std::tan(th) * x_ - y_;
+		const double x = std::abs(a * carrotX + carrotY + c) / std::sqrt(a * a + 1.0);
+		const double d = std::hypot(tx, ty);
+		const double curvature = (d > 1e-6) ? (side * ((2.0 * x) / (d * d))) : 0.0;
+		const double radius = (std::abs(curvature) > 1e-9) ? (1.0 / std::abs(curvature)) : 1e9;
+		const double maxSlip = std::sqrt(std::abs(movePoseBoomerangParams_.driftCompensation) * radius);
+		lateralOut = clampd(lateralOut, -maxSlip, maxSlip);
+	}
+
+	// Prioritize angular movement over lateral movement (LemLib overthrow behavior).
+	{
+		const double overturn = std::abs(angularOut) + std::abs(lateralOut) - maxLat;
+		if (overturn > 0.0) {
+			lateralOut -= (lateralOut > 0.0 ? overturn : -overturn);
+		}
+	}
+
+	// Desaturate to keep within [-127,127] while preserving mix.
+	const auto out = drive_control::desaturate(lateralOut / 127.0, angularOut / 127.0);
+	applyTank(clampVolt(static_cast<int>(std::lround(out.left * 127.0))),
+	          clampVolt(static_cast<int>(std::lround(out.right * 127.0))));
 }
 
 inline void drivetrain::Chassis::stepTurnToHeading(double dt) {

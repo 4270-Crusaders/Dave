@@ -45,6 +45,11 @@ inline void Drive::moveToPose(float x, float y, float theta, int timeout, drivet
 	chassis_.moveToPose(x, y, theta, timeout, params, async);
 }
 
+inline void Drive::moveToPoseBoomerang(float x, float y, float theta, int timeout,
+                                       drivetrain::MoveToPoseBoomerangParams params, bool async) {
+	chassis_.moveToPoseBoomerang(x, y, theta, timeout, params, async);
+}
+
 inline void Drive::turnToHeading(float theta, int timeout, drivetrain::TurnToHeadingParams params, bool async) {
 	chassis_.turnToHeading(theta, timeout, params, async);
 }
