@@ -157,7 +157,7 @@ Use **`include/commands/`** for factory functions and command groups (see **`Dri
 Typical flow:
 
 1. **`chassis->setPose(x, y, theta)`** — Seed pose (inches and degrees by default; overloads exist).
-2. **Motion calls** — e.g. `moveToPoint`, `moveToPose`, `turnToHeading`, or `followPath`.
+2. **Motion calls** — e.g. `moveToPoint`, `moveToPose`, `moveToPoseBoomerang`, `turnToHeading`, or `followPath`.
 3. **`waitUntilDone()`** — Block until the current motion finishes (when using async motion APIs carefully).
 4. **Command-based auton** — Schedule `DriveCommands::moveToPoseCommand(chassis, ...)` and compose with `Sequence` / `ParallelCommandGroup` for structured routines.
 
@@ -175,8 +175,8 @@ Typical flow:
 
 Core implementation: `include/subsystems/drive/drivetrain/chassis.h` + `include/subsystems/drive/drivetrain/detail/chassis.inl.h`.
 
-- **ChassisConfig** — Motor ports, IMU port, tracking wheel ports, track width, wheel diameter. Treat this as **hardware truth**.
-- **Odometry** — Updated in `tick()`; fused with IMU heading.
+- **ChassisConfig** — Motor ports, **0..N IMUs**, **0..N vertical + 0..N horizontal tracking wheels**, track width, wheel diameters. Treat this as **hardware truth**.
+- **Odometry** — Updated in `tick()` via LemLib-style fusion (multi-IMU circular mean, wheel-heading fallback, Pilons integration, IME fallback).
 - **Motions** — PID-based move/turn/swing/follow-path. Tunings live on member `Pid` objects in the class (advanced users adjust gains there).
 
 `Drive::periodic()` runs the chassis tick. **MCL is currently decoupled** from the drive hot path while the drive stack is being rewritten; the runtime entrypoints still exist under `include/subsystems/drive/localization/mcl_runtime.h` and `src/subsystems/drive/localization/mcl_runtime.cpp`.
