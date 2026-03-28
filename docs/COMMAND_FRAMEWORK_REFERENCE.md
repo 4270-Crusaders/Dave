@@ -1,6 +1,6 @@
 # Command Framework Reference
 
-This document explains **CommandScheduler**, **Trigger**, **EventLoop**, and all **command types** in the `command` folder, plus **sequences** and **parallel groups**.
+This document explains **CommandScheduler**, **Trigger**, **EventLoop**, and all **command types** in the **`include/utils/command/`** folder (vendored libcommand), plus **sequences** and **parallel groups**. Put **your** command classes under **`include/utils/commands/`**.
 
 ---
 
@@ -77,7 +77,7 @@ Helpers on `Command*`:
 
 ---
 
-## 5. Command types (in `command` folder)
+## 5. Command types (in `utils/command/`)
 
 ### 5.1 FunctionalCommand
 
