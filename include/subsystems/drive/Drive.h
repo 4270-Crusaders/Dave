@@ -26,6 +26,8 @@ public:
 
 	void moveToPoint(float x, float y, int timeout, drivetrain::MoveToPointParams params = {}, bool async = true);
 	void moveToPose(float x, float y, float theta, int timeout, drivetrain::MoveToPoseParams params = {}, bool async = true);
+	void moveToPoseBoomerang(float x, float y, float theta, int timeout, drivetrain::MoveToPoseBoomerangParams params = {},
+	                         bool async = true);
 	void turnToHeading(float theta, int timeout, drivetrain::TurnToHeadingParams params = {}, bool async = true);
 	void turnToPoint(float x, float y, int timeout, drivetrain::TurnToPointParams params = {}, bool async = true);
 	void swingToHeading(float theta, drivetrain::DriveSide lockedSide, int timeout,

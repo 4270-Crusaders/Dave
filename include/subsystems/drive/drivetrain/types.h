@@ -21,6 +21,25 @@ struct MoveToPoseParams {
 	float turnMaxSpeed = 127.f;
 };
 
+struct MoveToPoseBoomerangParams {
+	bool reversed = false;
+	float lead = 0.6f;
+	/** Distance at which we switch from carrot-heading to final-heading (inches). */
+	float closeRangeIn = 7.5f;
+	/** Consider finished when dist < this AND heading error < `settleAngleDeg` (inches). */
+	float settleDistIn = 1.75f;
+	/** Consider finished when dist < `settleDistIn` AND heading error < this (degrees). */
+	float settleAngleDeg = 2.5f;
+	float maxLateralSpeed = 127.f;
+	float minLateralSpeed = 0.f;
+	float maxAngularSpeed = 127.f;
+	float lateralSlew = 0.f;
+	float angularSlew = 0.f;
+	float driftCompensation = 0.f;
+	/** Extra distance past the target plane where we can early-exit (inches). */
+	float earlyExitRangeIn = 0.f;
+};
+
 struct TurnToHeadingParams {
 	float maxSpeed = 127.f;
 	float minSpeed = 15.f;

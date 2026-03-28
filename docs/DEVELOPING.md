@@ -157,7 +157,7 @@ Use **`include/commands/`** for factory functions and command groups (see **`Dri
 Typical flow:
 
 1. **`chassis->setPose(x, y, theta)`** — Seed pose (inches and degrees by default; overloads exist).
-2. **Motion calls** — e.g. `moveToPoint`, `moveToPose`, `turnToHeading`, or `followPath`.
+2. **Motion calls** — e.g. `moveToPoint`, `moveToPose`, `moveToPoseBoomerang`, `turnToHeading`, or `followPath`.
 3. **`waitUntilDone()`** — Block until the current motion finishes (when using async motion APIs carefully).
 4. **Command-based auton** — Schedule `DriveCommands::moveToPoseCommand(chassis, ...)` and compose with `Sequence` / `ParallelCommandGroup` for structured routines.
 
@@ -175,11 +175,13 @@ Typical flow:
 
 Core implementation: `include/subsystems/drive/drivetrain/chassis.h` + `include/subsystems/drive/drivetrain/detail/chassis.inl.h`.
 
-- **ChassisConfig** — Motor ports, IMU port, tracking wheel ports, track width, wheel diameter. Treat this as **hardware truth**.
-- **Odometry** — Updated in `tick()`; fused with IMU heading.
+- **ChassisConfig** — Motor ports, **0..N IMUs**, **0..N vertical + 0..N horizontal tracking wheels**, track width, wheel diameters. Treat this as **hardware truth**.
+- **Odometry** — Updated in `tick()` via LemLib-style fusion (multi-IMU circular mean, wheel-heading fallback, Pilons integration, IME fallback).
 - **Motions** — PID-based move/turn/swing/follow-path. Tunings live on member `Pid` objects in the class (advanced users adjust gains there).
 
-`Drive::periodic()` runs the chassis tick and **MCL**; implementation is in `include/subsystems/drive/Drive.inl.h`. Auton/teleop **commands** are built in **`include/commands/DriveCommands.h`**.
+`Drive::periodic()` runs the chassis tick. **MCL is currently decoupled** from the drive hot path while the drive stack is being rewritten; the runtime entrypoints still exist under `include/subsystems/drive/localization/mcl_runtime.h` and `src/subsystems/drive/localization/mcl_runtime.cpp`.
+
+Auton/teleop **commands** are built in **`include/commands/DriveCommands.h`**.
 
 ### `utils/geom/`
 
@@ -191,15 +193,16 @@ Umbrella include: **`utils/geom/geom.h`**.
 
 When **`drive_constants::kEnableMcl`** is `true`:
 
-- **`localization_init_mcl(chassis)`** (already called from `initialize()` after IMU cal) allocates the particle filter and distance sensor objects from **`drive_constants::kMclDistanceMounts`**.
-- Each frame, **`Drive::periodic()`** runs **`localization_tick_mcl`**: predict particles with the odometry delta + motion noise, then apply **all** distance readings in one **log-likelihood** update (numerically stable), then **stochastic universal resampling** when effective sample size drops.
+- **Currently decoupled**: during the drive rewrite, MCL is **not** called from `Drive::periodic()` or `initialize()` by default.
+- **`localization_init_mcl(chassis)`** allocates the particle filter and distance sensor objects from **`drive_constants::kMclDistanceMounts`**.
+- **`localization_tick_mcl(chassis)`** performs predict+update+resample: predict particles with the odometry delta + motion noise, then apply **all** distance readings in one **log-likelihood** update (numerically stable), then **stochastic universal resampling** when effective sample size drops.
 - **`localization_get_mcl_estimate()`** returns a **`drivetrain::Pose`**: weighted mean for \(x,y\), **circular mean** for \(\theta\) via `atan2(Σ w sin θ, Σ w cos θ)` (better than linear averaging on heading).
 
 Tuning in **`subsystems/drive/DriveConstants.h`** (`namespace drive_constants`): field bounds, `kMclParticleCount`, motion sigmas (`kMclSigma*`), measurement sigma (`kMclSigmaMeasureIn`), **`kMclOutlierMaxIn` / `kMclOutlierLogPenalty`**, optional **`kMclResamplePosJitterIn` / `kMclResampleThetaJitterRad`**, invalid-mm threshold. Wrong map or mounts still looks like “bad GPS”—iterate on hardware.
 
 Background: particle filters and SUR are described clearly in [Aadish Verma’s MCL write-up](https://www.aadishv.dev/mcl) and [MCL 2: Resampling](https://www.aadishv.dev/mcl-2x). Another VEX-oriented codebase (LemLib + PROS) is [u-k-g/monte-carlo-localization](https://github.com/u-k-g/monte-carlo-localization)—useful for comparison, not a drop-in.
 
-Implementation files: `include/subsystems/drive/localization/mcl_filter.h`, `axis_aligned_raycast.h`, `mcl_runtime.h`.
+Implementation files: `include/subsystems/drive/localization/mcl_filter.h`, `axis_aligned_raycast.h`, `mcl_runtime.h`, and `src/subsystems/drive/localization/mcl_runtime.cpp`.
 
 ---
 

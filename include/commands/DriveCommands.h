@@ -5,6 +5,7 @@
  */
 #include "subsystems/drive/Drive.h"
 #include "subsystems/drive/DriveConstants.h"
+#include "subsystems/drive/driver/DriverInput.h"
 #include "subsystems/drive/drivetrain/math.h"
 #include "utils/command/command.h"
 #include "utils/command/commandController.h"
@@ -55,8 +56,19 @@ namespace DriveCommands {
 inline RunCommand* arcadeDefaultCommand(Drive* drive, CommandController* controller) {
 	return new RunCommand(
 		[drive, controller]() {
-			drive->arcade(controller->get_analog(pros::E_CONTROLLER_ANALOG_LEFT_Y),
-			              controller->get_analog(pros::E_CONTROLLER_ANALOG_RIGHT_X));
+			drive_driver::ArcadeConfig cfg{};
+			cfg.throttle.deadband = drive_constants::kDriveTeleopDeadband;
+			cfg.turn.deadband = drive_constants::kDriveTeleopDeadband;
+			cfg.throttle.expo = drive_constants::kDriveTeleopExpoThrottle;
+			cfg.turn.expo = drive_constants::kDriveTeleopExpoTurn;
+			cfg.throttle.minOutput = drive_constants::kDriveTeleopMinOutputThrottle;
+			cfg.turn.minOutput = drive_constants::kDriveTeleopMinOutputTurn;
+			cfg.turnSteerPriority = drive_constants::kDriveTeleopTurnSteerPriority;
+
+			const auto out = drive_driver::shapeArcade(
+				controller->get_analog(pros::E_CONTROLLER_ANALOG_LEFT_Y),
+				controller->get_analog(pros::E_CONTROLLER_ANALOG_RIGHT_X), cfg);
+			drive->arcade(out.throttle, out.turn);
 		},
 		{drive});
 }

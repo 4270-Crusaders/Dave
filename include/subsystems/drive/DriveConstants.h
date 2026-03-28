@@ -37,6 +37,14 @@ namespace drive_constants {
 	inline constexpr double kDriveCommandPathEndPosTolIn = 2.5;
 	inline constexpr double kDriveCommandPathEndHeadingTolDeg = 12.0;
 
+	// Driver input shaping (teleop).
+	inline constexpr std::int32_t kDriveTeleopDeadband = 6;
+	inline constexpr double kDriveTeleopExpoThrottle = 0.25;
+	inline constexpr double kDriveTeleopExpoTurn = 0.25;
+	inline constexpr std::int32_t kDriveTeleopMinOutputThrottle = 0;
+	inline constexpr std::int32_t kDriveTeleopMinOutputTurn = 0;
+	inline constexpr double kDriveTeleopTurnSteerPriority = 0.2;
+
 	struct DistanceSensorMount {
 		std::uint8_t port;
 		double offset_x_in;

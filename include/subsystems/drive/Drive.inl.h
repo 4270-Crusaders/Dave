@@ -1,94 +1,11 @@
 #pragma once
 
 #include "subsystems/drive/DriveConstants.h"
-#include "subsystems/drive/localization/mcl_filter.h"
-
-#include "pros/distance.hpp"
-
-#include <memory>
-#include <vector>
-
-namespace drive_mcl_detail {
-
-inline localization::MclFilter*& mclFilterPtr() {
-	static localization::MclFilter* p = nullptr;
-	return p;
-}
-
-inline std::vector<pros::Distance>*& mclDistVec() {
-	static std::vector<pros::Distance>* v = nullptr;
-	return v;
-}
-
-inline drivetrain::Pose& mclLastOdom() {
-	static drivetrain::Pose pose{};
-	return pose;
-}
-
-inline bool& mclHaveLast() {
-	static bool h = false;
-	return h;
-}
-
-} // namespace drive_mcl_detail
-
-inline void localization_init_mcl(Drive* drive) {
-	using namespace drive_mcl_detail;
-	if (!drive_constants::kEnableMcl || drive == nullptr) {
-		return;
-	}
-	delete mclFilterPtr();
-	delete mclDistVec();
-	mclFilterPtr() = nullptr;
-	mclDistVec() = nullptr;
-	mclHaveLast() = false;
-	mclFilterPtr() = new localization::MclFilter();
-	mclDistVec() = new std::vector<pros::Distance>();
-	mclDistVec()->reserve(drive_constants::kMclDistanceMounts.size());
-	for (const auto& m : drive_constants::kMclDistanceMounts) {
-		mclDistVec()->emplace_back(m.port);
-	}
-	const drivetrain::Pose p = drive->getPose(true);
-	mclFilterPtr()->resetAround(p.x, p.y, p.theta, 6.0, 0.4);
-	mclLastOdom() = p;
-	mclHaveLast() = true;
-}
-
-inline void localization_tick_mcl(Drive* drive) {
-	using namespace drive_mcl_detail;
-	if (!drive_constants::kEnableMcl || drive == nullptr || mclFilterPtr() == nullptr || mclDistVec() == nullptr) {
-		return;
-	}
-	const drivetrain::Pose now = drive->getPose(true);
-	if (!mclHaveLast()) {
-		mclLastOdom() = now;
-		mclHaveLast() = true;
-		return;
-	}
-	mclFilterPtr()->predictFromOdom(mclLastOdom(), now);
-	mclLastOdom() = now;
-	std::vector<std::int32_t> readings;
-	readings.reserve(mclDistVec()->size());
-	for (auto& s : *mclDistVec()) {
-		readings.push_back(s.get_distance());
-	}
-	mclFilterPtr()->updateAllDistances(readings.data(), readings.size());
-	mclFilterPtr()->resampleIfNeeded();
-}
-
-inline drivetrain::Pose localization_get_mcl_estimate() {
-	using namespace drive_mcl_detail;
-	if (mclFilterPtr() == nullptr) {
-		return {};
-	}
-	return mclFilterPtr()->estimateMean();
-}
 
 inline Drive::Drive() : chassis_{} {}
 
 inline void Drive::periodic() {
 	chassis_.tick();
-	localization_tick_mcl(this);
 }
 
 inline void Drive::arcade(double throttle, double turn) {
@@ -126,6 +43,11 @@ inline void Drive::moveToPoint(float x, float y, int timeout, drivetrain::MoveTo
 inline void Drive::moveToPose(float x, float y, float theta, int timeout, drivetrain::MoveToPoseParams params,
                               bool async) {
 	chassis_.moveToPose(x, y, theta, timeout, params, async);
+}
+
+inline void Drive::moveToPoseBoomerang(float x, float y, float theta, int timeout,
+                                       drivetrain::MoveToPoseBoomerangParams params, bool async) {
+	chassis_.moveToPoseBoomerang(x, y, theta, timeout, params, async);
 }
 
 inline void Drive::turnToHeading(float theta, int timeout, drivetrain::TurnToHeadingParams params, bool async) {
