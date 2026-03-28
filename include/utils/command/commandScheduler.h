@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cassert>
+#include <ranges>
 #include <unordered_map>
 #include "command.h"
 #include "subsystem.h"

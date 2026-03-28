@@ -255,6 +255,6 @@ private:
 	static constexpr double kAngleTolRad = 2.5 * kPi / 180.0;
 };
 
-#include "subsystems/drive/drivetrain/detail/chassis.inl.h"
-
 } // namespace drivetrain
+
+#include "subsystems/drive/drivetrain/detail/chassis.inl.h"

@@ -47,11 +47,11 @@ inline std::int32_t applyMinOutput(std::int32_t v, std::int32_t min_out) {
 }
 
 inline std::int32_t shapeAxis(std::int32_t raw, const AxisShape& s) {
-	raw = std::clamp(raw, -127, 127);
+	raw = std::clamp<std::int32_t>(raw, -127, 127);
 	std::int32_t v = applyDeadband(raw, s.deadband);
 	v = applyExpo(v, s.expo);
 	v = applyMinOutput(v, s.minOutput);
-	return std::clamp(v, -127, 127);
+	return std::clamp<std::int32_t>(v, -127, 127);
 }
 
 struct ArcadeConfig {
@@ -73,7 +73,7 @@ inline ArcadeOut shapeArcade(std::int32_t raw_throttle, std::int32_t raw_turn, c
 	const double turn_frac = static_cast<double>(std::abs(r)) / 127.0;
 	const double scale = 1.0 - pr * turn_frac;
 	t = static_cast<std::int32_t>(std::lround(static_cast<double>(t) * scale));
-	return {std::clamp(t, -127, 127), r};
+	return {std::clamp<std::int32_t>(t, -127, 127), r};
 }
 
 } // namespace drive_driver

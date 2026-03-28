@@ -26,7 +26,7 @@ public:
 
 	/** Compose: this * other (apply other first, then this). */
 	Transform2d operator*(const Transform2d& o) const {
-		return {m_translation + o.m_translation().rotateBy(m_rotation), m_rotation + o.rotation()};
+		return {m_translation + o.translation().rotateBy(m_rotation), m_rotation + o.rotation()};
 	}
 
 	Transform2d inverse() const {
