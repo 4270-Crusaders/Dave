@@ -81,11 +81,117 @@ inline bool advanceAlongPath(const drivetrain::Path& path, std::size_t segIndex,
 
 inline drivetrain::Chassis::Chassis(ChassisConfig cfg)
 	: cfg_(std::move(cfg)),
-	  leftMotors_(cfg_.leftMotorPorts, pros::v5::MotorGears::blue),
-	  rightMotors_(cfg_.rightMotorPorts, pros::v5::MotorGears::blue),
-	  imu_(cfg_.imuPort),
-	  vertRot_(cfg_.verticalRotationPort),
-	  horizRot_(cfg_.horizontalRotationPort) {}
+	  leftMotors_(cfg_.leftMotorPorts, pros::v5::MotorGears::blue, pros::v5::MotorUnits::degrees),
+	  rightMotors_(cfg_.rightMotorPorts, pros::v5::MotorGears::blue, pros::v5::MotorUnits::degrees),
+	  imus_([&]() {
+		  // Default: use legacy single IMU if user didn't supply a vector.
+		  std::vector<pros::Imu> out;
+		  const auto& ports = cfg_.imuPorts.empty() ? std::vector<std::uint8_t>{cfg_.imuPort} : cfg_.imuPorts;
+		  out.reserve(ports.size());
+		  for (std::uint8_t p : ports) {
+			  out.emplace_back(p);
+		  }
+		  return out;
+	  }()),
+	  verticalRots_([&]() {
+		  // Default: use legacy single vertical rotation if user didn't supply a vector.
+		  std::vector<pros::Rotation> out;
+		  if (cfg_.verticalWheels.empty()) {
+			  out.emplace_back(cfg_.verticalRotationPort);
+			  return out;
+		  }
+		  out.reserve(cfg_.verticalWheels.size());
+		  for (const auto& w : cfg_.verticalWheels) {
+			  out.emplace_back(w.port);
+		  }
+		  return out;
+	  }()),
+	  horizontalRots_([&]() {
+		  // Default: use legacy single horizontal rotation if user didn't supply a vector.
+		  std::vector<pros::Rotation> out;
+		  if (cfg_.horizontalWheels.empty()) {
+			  out.emplace_back(cfg_.horizontalRotationPort);
+			  return out;
+		  }
+		  out.reserve(cfg_.horizontalWheels.size());
+		  for (const auto& w : cfg_.horizontalWheels) {
+			  out.emplace_back(w.port);
+		  }
+		  return out;
+	  }()) {
+	// LemLib-style odometry fusion setup (multi-IMU + arbitrary wheels).
+
+	// IME fallback always available (used when vertical wheels list is empty in fusion).
+	ime_.left = &leftMotors_;
+	ime_.right = &rightMotors_;
+	ime_.inchesPerMotorDeg = (kPi * cfg_.driveWheelDiameterIn) / 360.0; // 360deg = one shaft rev
+
+	// Heading sources: feed raw IMU headings (no user offset). Fusion will circular-mean them.
+	std::vector<drive_odom::OdomFusion::HeadingSource> headings;
+	headings.reserve(imus_.size());
+	for (auto& imu : imus_) {
+		headings.emplace_back([&imu]() { return degToRad(imu.get_rotation()); });
+	}
+	odom_.setHeadingSources(std::move(headings));
+
+	// Wheel sources (rotation sensors).
+	std::vector<drive_odom::OdomFusion::WheelSource> vws;
+	std::vector<drive_odom::OdomFusion::WheelSource> hws;
+
+	if (cfg_.verticalWheels.empty()) {
+		// Default legacy: single wheel using `trackingWheelDiameterIn`, offset 0.
+		legacyVertWheel_.rot = verticalRots_.empty() ? nullptr : &verticalRots_[0];
+		legacyVertWheel_.inchesPerCentiDeg = (kPi * cfg_.trackingWheelDiameterIn) / 36000.0;
+		legacyVertWheel_.offsetIn = 0.0;
+		vws.push_back({[this]() { return legacyVertWheel_.deltaIn(); },
+		               [this]() { return legacyVertWheel_.totalIn(); },
+		               0.0});
+	} else {
+		verticalWheelAdapters_.clear();
+		verticalWheelAdapters_.reserve(cfg_.verticalWheels.size());
+		for (std::size_t i = 0; i < cfg_.verticalWheels.size(); ++i) {
+			const auto& wc = cfg_.verticalWheels[i];
+			RotationWheelAdapter a{};
+			a.rot = &verticalRots_[i];
+			a.inchesPerCentiDeg = (kPi * wc.diameterIn * wc.ratio) / 36000.0;
+			a.offsetIn = wc.offsetIn;
+			verticalWheelAdapters_.push_back(a);
+			vws.push_back({[this, i]() { return verticalWheelAdapters_[i].deltaIn(); },
+			               [this, i]() { return verticalWheelAdapters_[i].totalIn(); },
+			               wc.offsetIn});
+		}
+	}
+
+	if (cfg_.horizontalWheels.empty()) {
+		legacyHorizWheel_.rot = horizontalRots_.empty() ? nullptr : &horizontalRots_[0];
+		legacyHorizWheel_.inchesPerCentiDeg = (kPi * cfg_.trackingWheelDiameterIn) / 36000.0;
+		legacyHorizWheel_.offsetIn = 0.0;
+		hws.push_back({[this]() { return legacyHorizWheel_.deltaIn(); },
+		               [this]() { return legacyHorizWheel_.totalIn(); },
+		               0.0});
+	} else {
+		horizontalWheelAdapters_.clear();
+		horizontalWheelAdapters_.reserve(cfg_.horizontalWheels.size());
+		for (std::size_t i = 0; i < cfg_.horizontalWheels.size(); ++i) {
+			const auto& wc = cfg_.horizontalWheels[i];
+			RotationWheelAdapter a{};
+			a.rot = &horizontalRots_[i];
+			a.inchesPerCentiDeg = (kPi * wc.diameterIn * wc.ratio) / 36000.0;
+			a.offsetIn = wc.offsetIn;
+			horizontalWheelAdapters_.push_back(a);
+			hws.push_back({[this, i]() { return horizontalWheelAdapters_[i].deltaIn(); },
+			               [this, i]() { return horizontalWheelAdapters_[i].totalIn(); },
+			               wc.offsetIn});
+		}
+	}
+
+	odom_.setVerticalWheels(std::move(vws));
+	odom_.setHorizontalWheels(std::move(hws));
+	odom_.setImeDriveSource(drive_odom::OdomFusion::MotorImuDriveSource{
+		[this]() { return ime_.leftDeltaIn(); },
+		[this]() { return ime_.rightDeltaIn(); },
+	});
+}
 
 inline int32_t drivetrain::Chassis::deltaCentideg(int32_t prev, int32_t cur) {
 	int32_t d = cur - prev;
@@ -104,28 +210,30 @@ inline double drivetrain::Chassis::centidegToInches(int32_t dCenti) const {
 	return rev * kPi * cfg_.trackingWheelDiameterIn;
 }
 
-inline double drivetrain::Chassis::headingRad() const { return degToRad(imu_.get_rotation()) + headingOffsetRad_; }
+inline double drivetrain::Chassis::headingRad() const {
+	const double raw = imus_.empty() ? odom_.getPose().theta : degToRad(imus_[0].get_rotation());
+	return raw + headingOffsetRad_;
+}
 
 inline void drivetrain::Chassis::updateOdometry() {
-	const int32_t v = vertRot_.get_position();
-	const int32_t h = horizRot_.get_position();
 	if (firstOdomSample_) {
-		prevVertCenti_ = v;
-		prevHorizCenti_ = h;
+		for (auto& w : verticalWheelAdapters_) {
+			w.reset();
+		}
+		for (auto& w : horizontalWheelAdapters_) {
+			w.reset();
+		}
+		legacyVertWheel_.reset();
+		legacyHorizWheel_.reset();
+		ime_.reset();
 		firstOdomSample_ = false;
+		odom_.setPose({x_, y_, headingRad()});
 		return;
 	}
-	const int32_t dv = deltaCentideg(prevVertCenti_, v);
-	const int32_t dh = deltaCentideg(prevHorizCenti_, h);
-	prevVertCenti_ = v;
-	prevHorizCenti_ = h;
-	const double fwd = centidegToInches(dv);
-	const double lat = centidegToInches(dh);
-	const double th = headingRad();
-	const double c = std::cos(th);
-	const double s = std::sin(th);
-	x_ += fwd * c - lat * s;
-	y_ += fwd * s + lat * c;
+	odom_.update();
+	const drivetrain::Pose p = odom_.getPose();
+	x_ = p.x;
+	y_ = p.y;
 }
 
 inline drivetrain::Pose drivetrain::Chassis::getPose() const { return {x_, y_, headingRad()}; }
@@ -141,16 +249,21 @@ inline void drivetrain::Chassis::setPose(double x, double y, double theta, bool 
 	x_ = x;
 	y_ = y;
 	const double thetaRad = radians ? theta : degToRad(theta);
-	headingOffsetRad_ = thetaRad - degToRad(imu_.get_rotation());
+	const double raw = imus_.empty() ? thetaRad : degToRad(imus_[0].get_rotation());
+	headingOffsetRad_ = thetaRad - raw;
+	odom_.setPose({x_, y_, thetaRad});
 }
 
 inline void drivetrain::Chassis::resetLocalPosition() {
 	x_ = 0;
 	y_ = 0;
+	odom_.setPose({0.0, 0.0, headingRad()});
 }
 
 inline void drivetrain::Chassis::calibrateImu() {
-	imu_.reset(true);
+	for (auto& imu : imus_) {
+		imu.reset(true);
+	}
 	firstOdomSample_ = true;
 }
 

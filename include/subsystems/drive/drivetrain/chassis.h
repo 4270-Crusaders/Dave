@@ -3,12 +3,14 @@
 #include "subsystems/drive/drivetrain/math.h"
 #include "subsystems/drive/drivetrain/pid.h"
 #include "subsystems/drive/drivetrain/types.h"
+#include "subsystems/drive/odometry/OdomFusion.h"
 #include "pros/imu.hpp"
 #include "pros/misc.hpp"
 #include "pros/motor_group.hpp"
 #include "pros/rotation.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace drivetrain {
@@ -16,11 +18,33 @@ namespace drivetrain {
 struct ChassisConfig {
 	std::vector<std::int8_t> leftMotorPorts = {-11, 12, -13};
 	std::vector<std::int8_t> rightMotorPorts = {18, 19, -20};
+	double trackWidthIn = 10.0;
+	double trackingWheelDiameterIn = 2.0;
+
+	/** Rotation-sensor tracking wheel description (inches). */
+	struct RotationWheelConfig {
+		std::int8_t port = 0;
+		double diameterIn = 2.0;
+		double offsetIn = 0.0;
+		double ratio = 1.0; // driven / driving
+	};
+
+	/** IMU ports (supports 0..N). Default uses legacy `imuPort`. */
+	std::vector<std::uint8_t> imuPorts{};
+
+	/** Vertical (forward) tracking wheels (supports 0..N). Default uses legacy `verticalRotationPort`. */
+	std::vector<RotationWheelConfig> verticalWheels{};
+
+	/** Horizontal (lateral) tracking wheels (supports 0..N). Default uses legacy `horizontalRotationPort`. */
+	std::vector<RotationWheelConfig> horizontalWheels{};
+
+	/** IME (motor encoder) fallback: drive wheel diameter when no vertical tracking wheels exist. */
+	double driveWheelDiameterIn = 2.0;
+
+	// Legacy single-sensor fields (kept for backward compatibility).
 	std::uint8_t imuPort = 16;
 	std::int8_t verticalRotationPort = -5;
 	std::int8_t horizontalRotationPort = 6;
-	double trackWidthIn = 10.0;
-	double trackingWheelDiameterIn = 2.0;
 };
 
 /**
@@ -99,16 +123,94 @@ private:
 	ChassisConfig cfg_;
 	pros::MotorGroup leftMotors_;
 	pros::MotorGroup rightMotors_;
-	pros::Imu imu_;
-	pros::Rotation vertRot_;
-	pros::Rotation horizRot_;
+	std::vector<pros::Imu> imus_{};
+	std::vector<pros::Rotation> verticalRots_{};
+	std::vector<pros::Rotation> horizontalRots_{};
+
+	drive_odom::OdomFusion odom_{};
+
+	struct RotationWheelAdapter {
+		pros::Rotation* rot = nullptr;
+		double inchesPerCentiDeg = 0.0;
+		std::optional<std::int32_t> lastAngleCenti{};
+		double offsetIn = 0.0;
+
+		double totalIn() const {
+			if (rot == nullptr) {
+				return 0.0;
+			}
+			return static_cast<double>(rot->get_angle()) * inchesPerCentiDeg;
+		}
+
+		double deltaIn() {
+			if (rot == nullptr) {
+				return 0.0;
+			}
+			const std::int32_t cur = rot->get_angle();
+			if (!lastAngleCenti.has_value()) {
+				lastAngleCenti = cur;
+				return 0.0;
+			}
+			const std::int32_t prev = *lastAngleCenti;
+			lastAngleCenti = cur;
+			const std::int32_t dCenti = Chassis::deltaCentideg(prev, cur);
+			return static_cast<double>(dCenti) * inchesPerCentiDeg;
+		}
+
+		void reset() { lastAngleCenti.reset(); }
+	};
+
+	struct MotorImeAdapter {
+		pros::MotorGroup* left = nullptr;
+		pros::MotorGroup* right = nullptr;
+		// motor group positions come in the motor encoder units; we will configure units to degrees.
+		double inchesPerMotorDeg = 0.0;
+		std::optional<double> lastLeftDeg{};
+		std::optional<double> lastRightDeg{};
+
+		double leftDeltaIn() {
+			if (left == nullptr) {
+				return 0.0;
+			}
+			const double cur = left->get_position();
+			if (!lastLeftDeg.has_value()) {
+				lastLeftDeg = cur;
+				return 0.0;
+			}
+			const double d = cur - *lastLeftDeg;
+			lastLeftDeg = cur;
+			return d * inchesPerMotorDeg;
+		}
+
+		double rightDeltaIn() {
+			if (right == nullptr) {
+				return 0.0;
+			}
+			const double cur = right->get_position();
+			if (!lastRightDeg.has_value()) {
+				lastRightDeg = cur;
+				return 0.0;
+			}
+			const double d = cur - *lastRightDeg;
+			lastRightDeg = cur;
+			return d * inchesPerMotorDeg;
+		}
+
+		void reset() {
+			lastLeftDeg.reset();
+			lastRightDeg.reset();
+		}
+	};
+
+	MotorImeAdapter ime_{};
+	std::vector<RotationWheelAdapter> verticalWheelAdapters_{};
+	std::vector<RotationWheelAdapter> horizontalWheelAdapters_{};
+	RotationWheelAdapter legacyVertWheel_{};
+	RotationWheelAdapter legacyHorizWheel_{};
 
 	double x_ = 0;
 	double y_ = 0;
 	double headingOffsetRad_ = 0;
-
-	int32_t prevVertCenti_ = 0;
-	int32_t prevHorizCenti_ = 0;
 	bool firstOdomSample_ = true;
 	std::uint32_t lastTickMs_ = 0;
 
