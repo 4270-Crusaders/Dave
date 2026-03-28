@@ -1,5 +1,4 @@
 #include "main.h"
-#include "subsystems/drive/localization/mcl_runtime.h"
 #include "pros/adi.hpp"
 #include "pros/misc.h"
 #include "pros/motors.hpp"
@@ -40,7 +39,6 @@ void initialize() {
 	pros::Task commandSchedulerTask(update_loop);
 
 	chassis->calibrate(true);
-	localization_init_mcl(chassis);
 }
 
 void disabled() {}
