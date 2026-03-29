@@ -52,9 +52,9 @@ namespace drive_constants {
 		double bearing_rad;
 	};
 
-	inline constexpr std::array<DistanceSensorMount, 2> kMclDistanceMounts = {
+	inline constexpr std::array<DistanceSensorMount, 2> kMclDistanceMounts = {{
 		{7, 6.0, 0.0, 0.0},
 		{8, -2.0, 5.0, 1.57079632679},
-	};
+	}};
 
 } // namespace drive_constants

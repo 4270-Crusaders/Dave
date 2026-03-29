@@ -1,8 +1,7 @@
 #pragma once
+#include <ranges>
 #include <set>
 #include "command.h"
-
-#include <bits/ranges_algo.h>
 
 /**
  * @brief Runs multiple \refitem Command s at once, with the command ending once all individual commands finsh.
