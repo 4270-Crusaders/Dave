@@ -18,22 +18,30 @@
 #define PROS_USE_SIMPLE_NAMES
 #define PROS_USE_LITERALS
 
+// PROS kernel
 #include "api.h"
+
+// LVGL dashboard (headers in include/robodash; sources in src/robodash/)
 #include "robodash/api.h"
 
+// Project
 #include "RobotConstants.h"
+
+// Shared math (WPILib-style 2D/3D geometry)
 #include "utils/geom/geom.h"
 
+// LemLib QUnits — https://github.com/LemLib/units
 #include "units/units.hpp"
+using namespace units;
+
+// LemLib chassis API (DriveSide / AngularDirection aliases)
+#include "lemlib/api.hpp"
+
+// Command-based framework (header-only, include/utils/command/)
 #include "utils/command/includes.h"
 
 #include "subsystems/subsystems.h"
 #include "commands/DriveCommands.h"
-
-// using namespace pros;
-// using namespace pros::literals;
-// using namespace okapi;
-using namespace units;
 
 #ifdef __cplusplus
 extern "C" {

@@ -1,12 +1,15 @@
 #pragma once
 
+#include "lemlib/asset.hpp"
+#include "lemlib/chassis/chassis.hpp"
 #include "utils/command/subsystem.h"
-#include "subsystems/drive/drivetrain/drivetrain.h"
-#include "pros/motors.h"
+#include "pros/imu.hpp"
+#include "pros/motor_group.hpp"
+#include "pros/rotation.hpp"
 
 /**
- * Drive subsystem: chassis (odom, teleop voltages, autonomous motions) + MCL tick in periodic().
- * Command factories live in commands/DriveCommands.h (FRC-style).
+ * Drive subsystem: thin wrapper around LemLib `Chassis` (odometry, teleop, autonomous motions).
+ * Command factories: `commands/DriveCommands.h`.
  */
 class Drive : public Subsystem {
 public:
@@ -19,23 +22,27 @@ public:
 	void curvature(int throttle, int turn);
 
 	void calibrate(bool calibrateImu = true);
-	drivetrain::Pose getPose(bool radians = false, bool standardPos = false);
+
+	lemlib::Pose getPose(bool radians = false, bool standardPos = false);
 	void setPose(float x, float y, float theta, bool radians = false);
-	void setPose(drivetrain::Pose pose, bool radians = false);
+	void setPose(lemlib::Pose pose, bool radians = false);
 	void resetLocalPosition();
 
-	void moveToPoint(float x, float y, int timeout, drivetrain::MoveToPointParams params = {}, bool async = true);
-	void moveToPose(float x, float y, float theta, int timeout, drivetrain::MoveToPoseParams params = {}, bool async = true);
-	void moveToPoseBoomerang(float x, float y, float theta, int timeout, drivetrain::MoveToPoseBoomerangParams params = {},
+	void moveToPoint(float x, float y, int timeout, lemlib::MoveToPointParams params = {}, bool async = true);
+	void moveToPose(float x, float y, float theta, int timeout, lemlib::MoveToPoseParams params = {}, bool async = true);
+	/** `moveToPose` with a stronger carrot (higher `lead`) for wider arcs. */
+	void moveToPoseBoomerang(float x, float y, float theta, int timeout, lemlib::MoveToPoseParams params = {},
 	                         bool async = true);
-	void turnToHeading(float theta, int timeout, drivetrain::TurnToHeadingParams params = {}, bool async = true);
-	void turnToPoint(float x, float y, int timeout, drivetrain::TurnToPointParams params = {}, bool async = true);
-	void swingToHeading(float theta, drivetrain::DriveSide lockedSide, int timeout,
-	                    drivetrain::SwingToHeadingParams params = {}, bool async = true);
-	void swingToPoint(float x, float y, drivetrain::DriveSide lockedSide, int timeout,
-	                  drivetrain::SwingToPointParams params = {}, bool async = true);
-	void followPath(const drivetrain::Path& path, float lookahead, int timeout, bool forwards = true, bool async = true,
-	                drivetrain::MoveToPointParams speedParams = {110.f, 25.f});
+
+	void turnToHeading(float theta, int timeout, lemlib::TurnToHeadingParams params = {}, bool async = true);
+	void turnToPoint(float x, float y, int timeout, lemlib::TurnToPointParams params = {}, bool async = true);
+	void swingToHeading(float theta, lemlib::DriveSide lockedSide, int timeout,
+	                    lemlib::SwingToHeadingParams params = {}, bool async = true);
+	void swingToPoint(float x, float y, lemlib::DriveSide lockedSide, int timeout,
+	                  lemlib::SwingToPointParams params = {}, bool async = true);
+
+	/** Pure pursuit: path text file in `static/`, bound with the LemLib ASSET macro. */
+	void follow(const asset& path, float lookahead, int timeout, bool forwards = true, bool async = true);
 
 	void waitUntilDone();
 	void waitUntil(float dist);
@@ -45,10 +52,22 @@ public:
 
 	void setBrakeMode(pros::motor_brake_mode_e_t mode);
 
-	~Drive() override = default;
+	lemlib::Chassis& chassis() { return chassis_; }
+	const lemlib::Chassis& chassis() const { return chassis_; }
 
 private:
-	drivetrain::Chassis chassis_;
+	pros::MotorGroup left_motors_;
+	pros::MotorGroup right_motors_;
+	pros::Imu imu_;
+	pros::Rotation vertical_enc_;
+	pros::Rotation horizontal_enc_;
+	lemlib::TrackingWheel vertical_wheel_;
+	lemlib::TrackingWheel horizontal_wheel_;
+	lemlib::Drivetrain drivetrain_;
+	lemlib::ControllerSettings linear_settings_;
+	lemlib::ControllerSettings angular_settings_;
+	lemlib::OdomSensors sensors_;
+	lemlib::ExpoDriveCurve throttle_curve_;
+	lemlib::ExpoDriveCurve steer_curve_;
+	lemlib::Chassis chassis_;
 };
-
-#include "subsystems/drive/Drive.inl.h"

@@ -2,11 +2,12 @@
 
 /**
  * FRC-style command factories for the drive subsystem (teleop defaults + motion commands).
+ * Motion uses LemLib `Chassis` under the hood (`Drive::chassis()`).
  */
 #include "subsystems/drive/Drive.h"
 #include "subsystems/drive/DriveConstants.h"
 #include "subsystems/drive/driver/DriverInput.h"
-#include "subsystems/drive/drivetrain/math.h"
+#include "subsystems/drive/math.h"
 #include "utils/command/command.h"
 #include "utils/command/commandController.h"
 #include "utils/command/functionalCommand.h"
@@ -21,7 +22,6 @@ namespace DriveCommandDetail {
 struct SettledGate {
 	std::uint32_t near_since_ms = 0;
 	void reset() { near_since_ms = 0; }
-	/** True once `near_goal` has been true continuously for at least `settle_ms`. */
 	bool update(std::uint32_t now_ms, bool near_goal, int settle_ms) {
 		if (!near_goal) {
 			near_since_ms = 0;
@@ -92,7 +92,7 @@ inline RunCommand* curvatureDefaultCommand(Drive* drive, CommandController* cont
 }
 
 inline Command* moveToPointCommand(Drive* drive, float x, float y, int timeout,
-                                   drivetrain::MoveToPointParams params = {}) {
+                                   lemlib::MoveToPointParams params = {}) {
 	auto t0 = std::make_shared<std::uint32_t>(0);
 	auto gate = std::make_shared<DriveCommandDetail::SettledGate>();
 	return new FunctionalCommand(
@@ -102,13 +102,13 @@ inline Command* moveToPointCommand(Drive* drive, float x, float y, int timeout,
 			drive->moveToPoint(x, y, timeout, params, true);
 		},
 		[]() {},
-		[drive](bool /*interrupted*/) { drive->cancelMotion(); },
+		[drive](bool /*interrupted*/) { drive->cancelAllMotions(); },
 		[drive, x, y, timeout, t0, gate]() {
 			const std::uint32_t now = pros::millis();
 			if (DriveCommandDetail::timedOut(*t0, now, timeout)) {
 				return true;
 			}
-			const drivetrain::Pose p = drive->getPose(false);
+			const lemlib::Pose p = drive->getPose(false);
 			const bool near = std::hypot(static_cast<double>(x) - p.x, static_cast<double>(y) - p.y) <
 			                  drive_constants::kDriveCommandPosTolIn;
 			return gate->update(now, near, drive_constants::kDriveCommandSettleMs);
@@ -117,7 +117,7 @@ inline Command* moveToPointCommand(Drive* drive, float x, float y, int timeout,
 }
 
 inline Command* moveToPoseCommand(Drive* drive, float x, float y, float theta, int timeout,
-                                  drivetrain::MoveToPoseParams params = {}) {
+                                  lemlib::MoveToPoseParams params = {}) {
 	auto t0 = std::make_shared<std::uint32_t>(0);
 	auto gate = std::make_shared<DriveCommandDetail::SettledGate>();
 	return new FunctionalCommand(
@@ -127,18 +127,17 @@ inline Command* moveToPoseCommand(Drive* drive, float x, float y, float theta, i
 			drive->moveToPose(x, y, theta, timeout, params, true);
 		},
 		[]() {},
-		[drive](bool /*interrupted*/) { drive->cancelMotion(); },
+		[drive](bool /*interrupted*/) { drive->cancelAllMotions(); },
 		[drive, x, y, theta, timeout, t0, gate]() {
 			const std::uint32_t now = pros::millis();
 			if (DriveCommandDetail::timedOut(*t0, now, timeout)) {
 				return true;
 			}
-			// Translate then turn: don't require final heading until the chassis motion has finished.
 			if (drive->isInMotion()) {
 				gate->reset();
 				return false;
 			}
-			const drivetrain::Pose p = drive->getPose(false);
+			const lemlib::Pose p = drive->getPose(false);
 			const bool pos_near = std::hypot(static_cast<double>(x) - p.x, static_cast<double>(y) - p.y) <
 			                      drive_constants::kDriveCommandPosTolIn;
 			const bool ang_near = DriveCommandDetail::headingErrDegMag(p.theta, static_cast<double>(theta)) <
@@ -149,7 +148,7 @@ inline Command* moveToPoseCommand(Drive* drive, float x, float y, float theta, i
 }
 
 inline Command* turnToHeadingCommand(Drive* drive, float theta, int timeout,
-                                     drivetrain::TurnToHeadingParams params = {}) {
+                                     lemlib::TurnToHeadingParams params = {}) {
 	auto t0 = std::make_shared<std::uint32_t>(0);
 	auto gate = std::make_shared<DriveCommandDetail::SettledGate>();
 	return new FunctionalCommand(
@@ -159,13 +158,13 @@ inline Command* turnToHeadingCommand(Drive* drive, float theta, int timeout,
 			drive->turnToHeading(theta, timeout, params, true);
 		},
 		[]() {},
-		[drive](bool /*interrupted*/) { drive->cancelMotion(); },
+		[drive](bool /*interrupted*/) { drive->cancelAllMotions(); },
 		[drive, theta, timeout, t0, gate]() {
 			const std::uint32_t now = pros::millis();
 			if (DriveCommandDetail::timedOut(*t0, now, timeout)) {
 				return true;
 			}
-			const drivetrain::Pose p = drive->getPose(false);
+			const lemlib::Pose p = drive->getPose(false);
 			const bool near = DriveCommandDetail::headingErrDegMag(p.theta, static_cast<double>(theta)) <
 			                  drive_constants::kDriveCommandAngleTolDeg;
 			return gate->update(now, near, drive_constants::kDriveCommandSettleMs);
@@ -174,7 +173,7 @@ inline Command* turnToHeadingCommand(Drive* drive, float theta, int timeout,
 }
 
 inline Command* turnToPointCommand(Drive* drive, float x, float y, int timeout,
-                                   drivetrain::TurnToPointParams params = {}) {
+                                   lemlib::TurnToPointParams params = {}) {
 	auto t0 = std::make_shared<std::uint32_t>(0);
 	auto gate = std::make_shared<DriveCommandDetail::SettledGate>();
 	return new FunctionalCommand(
@@ -184,13 +183,13 @@ inline Command* turnToPointCommand(Drive* drive, float x, float y, int timeout,
 			drive->turnToPoint(x, y, timeout, params, true);
 		},
 		[]() {},
-		[drive](bool /*interrupted*/) { drive->cancelMotion(); },
+		[drive](bool /*interrupted*/) { drive->cancelAllMotions(); },
 		[drive, x, y, timeout, t0, gate]() {
 			const std::uint32_t now = pros::millis();
 			if (DriveCommandDetail::timedOut(*t0, now, timeout)) {
 				return true;
 			}
-			const drivetrain::Pose p = drive->getPose(true);
+			const lemlib::Pose p = drive->getPose(true);
 			const double aim = std::atan2(static_cast<double>(y) - p.y, static_cast<double>(x) - p.x);
 			const bool near = std::abs(drivetrain::normalizeAngleRad(aim - p.theta)) <
 			                  drivetrain::degToRad(drive_constants::kDriveCommandAngleTolDeg);
@@ -199,8 +198,8 @@ inline Command* turnToPointCommand(Drive* drive, float x, float y, int timeout,
 		{drive});
 }
 
-inline Command* swingToHeadingCommand(Drive* drive, float theta, drivetrain::DriveSide lockedSide, int timeout,
-                                      drivetrain::SwingToHeadingParams params = {}) {
+inline Command* swingToHeadingCommand(Drive* drive, float theta, lemlib::DriveSide lockedSide, int timeout,
+                                      lemlib::SwingToHeadingParams params = {}) {
 	auto t0 = std::make_shared<std::uint32_t>(0);
 	auto gate = std::make_shared<DriveCommandDetail::SettledGate>();
 	return new FunctionalCommand(
@@ -210,13 +209,13 @@ inline Command* swingToHeadingCommand(Drive* drive, float theta, drivetrain::Dri
 			drive->swingToHeading(theta, lockedSide, timeout, params, true);
 		},
 		[]() {},
-		[drive](bool /*interrupted*/) { drive->cancelMotion(); },
+		[drive](bool /*interrupted*/) { drive->cancelAllMotions(); },
 		[drive, theta, timeout, t0, gate]() {
 			const std::uint32_t now = pros::millis();
 			if (DriveCommandDetail::timedOut(*t0, now, timeout)) {
 				return true;
 			}
-			const drivetrain::Pose p = drive->getPose(false);
+			const lemlib::Pose p = drive->getPose(false);
 			const bool near = DriveCommandDetail::headingErrDegMag(p.theta, static_cast<double>(theta)) <
 			                  drive_constants::kDriveCommandAngleTolDeg;
 			return gate->update(now, near, drive_constants::kDriveCommandSettleMs);
@@ -224,8 +223,8 @@ inline Command* swingToHeadingCommand(Drive* drive, float theta, drivetrain::Dri
 		{drive});
 }
 
-inline Command* swingToPointCommand(Drive* drive, float x, float y, drivetrain::DriveSide lockedSide, int timeout,
-                                    drivetrain::SwingToPointParams params = {}) {
+inline Command* swingToPointCommand(Drive* drive, float x, float y, lemlib::DriveSide lockedSide, int timeout,
+                                    lemlib::SwingToPointParams params = {}) {
 	auto t0 = std::make_shared<std::uint32_t>(0);
 	auto gate = std::make_shared<DriveCommandDetail::SettledGate>();
 	return new FunctionalCommand(
@@ -235,54 +234,16 @@ inline Command* swingToPointCommand(Drive* drive, float x, float y, drivetrain::
 			drive->swingToPoint(x, y, lockedSide, timeout, params, true);
 		},
 		[]() {},
-		[drive](bool /*interrupted*/) { drive->cancelMotion(); },
+		[drive](bool /*interrupted*/) { drive->cancelAllMotions(); },
 		[drive, x, y, timeout, t0, gate]() {
 			const std::uint32_t now = pros::millis();
 			if (DriveCommandDetail::timedOut(*t0, now, timeout)) {
 				return true;
 			}
-			const drivetrain::Pose p = drive->getPose(true);
+			const lemlib::Pose p = drive->getPose(true);
 			const double aim = std::atan2(static_cast<double>(y) - p.y, static_cast<double>(x) - p.x);
 			const bool near = std::abs(drivetrain::normalizeAngleRad(aim - p.theta)) <
 			                  drivetrain::degToRad(drive_constants::kDriveCommandAngleTolDeg);
-			return gate->update(now, near, drive_constants::kDriveCommandSettleMs);
-		},
-		{drive});
-}
-
-inline Command* followPathCommand(Drive* drive, drivetrain::Path path, float lookahead, int timeout, bool forwards,
-                                  drivetrain::MoveToPointParams speedParams = {110.f, 25.f}) {
-	auto t0 = std::make_shared<std::uint32_t>(0);
-	auto gate = std::make_shared<DriveCommandDetail::SettledGate>();
-	return new FunctionalCommand(
-		[drive, path, lookahead, timeout, forwards, speedParams, t0, gate]() {
-			gate->reset();
-			*t0 = pros::millis();
-			drive->followPath(path, lookahead, timeout, forwards, true, speedParams);
-		},
-		[]() {},
-		[drive](bool /*interrupted*/) { drive->cancelMotion(); },
-		[drive, path, timeout, t0, gate]() {
-			const std::uint32_t now = pros::millis();
-			if (DriveCommandDetail::timedOut(*t0, now, timeout)) {
-				return true;
-			}
-			if (path.empty()) {
-				return true;
-			}
-			const drivetrain::Pose p = drive->getPose(true);
-			const auto& end = path.back();
-			const double dist = std::hypot(end.x - p.x, end.y - p.y);
-			bool near = false;
-			if (path.size() < 2) {
-				near = dist < drive_constants::kDriveCommandPathEndPosTolIn;
-			} else {
-				const auto& prev = path[path.size() - 2];
-				const double seg_bear = std::atan2(end.y - prev.y, end.x - prev.x);
-				const double herr = std::abs(drivetrain::normalizeAngleRad(seg_bear - p.theta));
-				near = dist < drive_constants::kDriveCommandPathEndPosTolIn &&
-				       herr < drivetrain::degToRad(drive_constants::kDriveCommandPathEndHeadingTolDeg);
-			}
 			return gate->update(now, near, drive_constants::kDriveCommandSettleMs);
 		},
 		{drive});

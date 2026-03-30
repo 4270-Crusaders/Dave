@@ -23,10 +23,10 @@ Output goes to `bin/`. The project cannot be *run* locally — it targets physic
 
 There are no automated tests or linters configured. The build itself (`make`) is the main correctness check. `pros make` is equivalent to `make`.
 
-### Key gotcha: `chassis.inl.h` namespace
+### Drivetrain (LemLib)
 
-`include/subsystems/drive/drivetrain/detail/chassis.inl.h` is included **outside** `namespace drivetrain` in `chassis.h`. The inline member definitions use fully-qualified `drivetrain::Chassis::` names. Moving the include back inside the namespace will break the build because the anonymous helper namespace and standard library headers conflict with the `drivetrain` namespace.
+Motion and odometry use **[LemLib](https://github.com/LemLib/LemLib)** (`include/lemlib/`, `src/lemlib/`). Tune ports and tracking offsets in `include/subsystems/drive/DriveConstants.h`; wrapper API is `Drive` in `include/subsystems/drive/Drive.h`.
 
-### Missing `include/units/` symlink
+### Units (LemLib)
 
-The project expects `include/units/units.hpp` but the file lives at `include/utils/units/units.hpp`. A symlink `include/units -> utils/units` is needed. The update script creates it if absent.
+Headers from [LemLib/units](https://github.com/LemLib/units) live under `include/units/` (e.g. `units/units.hpp`). Use `pros c fetch` / apply the matching **liblvgl@8.3.8** template so `firmware/liblvgl.a` exists next to the vendored `include/liblvgl` tree ([purduesigbots/liblvgl](https://github.com/purduesigbots/liblvgl)). LemLib also vendors **`{fmt}`** under `include/fmt/` for logging/formatting inside the library.

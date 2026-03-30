@@ -1,6 +1,6 @@
 # Developing with this template
 
-This project is a **PROS 3** C++ template for VEX V5 robots. It is organized around **command-based programming** (like WPILib on FRC): you register **subsystems**, schedule **commands**, and let a **scheduler** run them on a fixed loop. The drivetrain uses a **custom** `drivetrain` library (odometry, PID moves, path following)—**not** LemLib.
+This project is a **PROS 3** C++ template for VEX V5 robots. It is organized around **command-based programming** (like WPILib on FRC): you register **subsystems**, schedule **commands**, and let a **scheduler** run them on a fixed loop. The drivetrain is **[LemLib](https://github.com/LemLib/LemLib)** behind a thin **`Drive`** wrapper (`include/subsystems/drive/Drive.h`).
 
 Use this document in order, or jump to the section that matches your level.
 
@@ -44,14 +44,15 @@ This template runs **`CommandScheduler::run()`** from a dedicated task on a **10
 - **Default command** — When nothing else requires a subsystem, the scheduler runs this command. Here, the drive default is **arcade** from the primary controller.
 - **Trigger** — Binds controller buttons to commands (e.g. “while held, run intake”).
 
-The command framework headers live in **`include/utils/command/`** (vendored from libcommand). `main.h` pulls in **`utils/command/includes.h`**.
+The command framework lives in **`include/utils/command/`** (header-only). `main.h` pulls in **`utils/command/includes.h`**.
 
 ### This template’s stack (folders)
 
-- **`include/subsystems/`** — One folder per mechanism. **`drive/`** holds **Drive + DriveConstants + drivetrain/ + localization/** (odom, paths, MCL). Examples: **`example_roller/`**, **`example_position_arm/`**, **`example_pneumatic/`** each with `*Subsystem*.h` + `*Constants.h`. Root **`subsystems.h`** lists includes.
+- **`include/subsystems/`** — One folder per mechanism. **`drive/`** holds **Drive**, **DriveConstants**, **math.h**, and **driver/** (teleop shaping). Examples: **`example_roller/`**, **`example_position_arm/`**, **`example_pneumatic/`** each with `*Subsystem*.h` + `*Constants.h`. Root **`subsystems.h`** lists includes.
 - **`include/commands/`** — FRC-style command factories, e.g. **`DriveCommands.h`** (`DriveCommands::moveToPointCommand`, default teleop commands, …).
 - **`RobotConstants.h`** — Project-wide toggles (e.g. `robot::kEnableExampleSubsystems`).
-- **`include/utils/`** — **`geom/`**, **`units/`**, **`command/`** (libcommand headers), optional **`commands/`** misc; **`utils.h`** shortcuts geom + drivetrain math.
+- **`include/utils/`** — **`geom/`**, **`command/`** (scheduler + command types), **`control/`**; **`utils.h`** pulls geom + drivetrain math shims.
+- **`include/units/`** — [LemLib units](https://github.com/LemLib/units) (`units/units.hpp`).
 
 ### What to edit day to day
 
@@ -82,7 +83,7 @@ If the build fails, read the compiler error: it usually names the file and line 
 ### Safety
 
 - **Lift the robot** or use wheel chocks when testing drivetrain code.
-- Verify **motor ports and reversed ports** (`-` in PROS means reversed) in hardware and in `drivetrain::ChassisConfig` inside `include/subsystems/drive/drivetrain/chassis.h` (defaults there; adjust to match your bot).
+- Verify **motor ports and reversed ports** (`-` in PROS means reversed) in hardware and in **`include/subsystems/drive/DriveConstants.h`** (and IMU / tracking wheel ports there).
 
 ---
 
@@ -91,7 +92,7 @@ If the build fails, read the compiler error: it usually names the file and line 
 ### Step 1: constants files
 
 - **`include/RobotConstants.h`** — `robot::kEnableExampleSubsystems` and other project-wide flags.
-- **`include/subsystems/drive/DriveConstants.h`** — `drive_constants::kEnableMcl`, field bounds, MCL tuning, distance-sensor mounts.
+- **`include/subsystems/drive/DriveConstants.h`** — LemLib chassis hardware (ports, wheel size, tracking offsets) and PID / teleop tuning.
 - **Per-example constants** — e.g. `example_roller_constants::` in `subsystems/example_roller/ExampleVelocityRollerConstants.h`.
 
 ### Step 2: `src/main.cpp`
@@ -148,7 +149,7 @@ Use **`include/commands/`** for factory functions and command groups (see **`Dri
 ### Entry point
 
 - Implement **`autonomous()`** in **`src/main.cpp`** (or add a separate `.cpp` and call it from `autonomous()`).
-- Use **`DriveCommands::`** factories (e.g. `moveToPoseCommand(chassis, ...)`) with **`Sequence`** / **`ParallelCommandGroup`** from libcommand.
+- Use **`DriveCommands::`** factories (e.g. `moveToPoseCommand(chassis, ...)`) with **`Sequence`** / **`ParallelCommandGroup`** from **`include/utils/command/`**.
 
 ### Using the drive in auton
 
@@ -157,31 +158,29 @@ Use **`include/commands/`** for factory functions and command groups (see **`Dri
 Typical flow:
 
 1. **`chassis->setPose(x, y, theta)`** — Seed pose (inches and degrees by default; overloads exist).
-2. **Motion calls** — e.g. `moveToPoint`, `moveToPose`, `moveToPoseBoomerang`, `turnToHeading`, or `followPath`.
+2. **Motion calls** — e.g. `moveToPoint`, `moveToPose`, `moveToPoseBoomerang`, `turnToHeading`, or **`follow`** with a path **asset** (see below).
 3. **`waitUntilDone()`** — Block until the current motion finishes (when using async motion APIs carefully).
 4. **Command-based auton** — Schedule `DriveCommands::moveToPoseCommand(chassis, ...)` and compose with `Sequence` / `ParallelCommandGroup` for structured routines.
 
-**Timeouts** are in **milliseconds** (PROS convention). **Async** parameters on some APIs allow overlapping logic; read `include/subsystems/drive/Drive.h` and the `drivetrain::Chassis` API for details.
+**Timeouts** are in **milliseconds** (PROS convention). Full motion API: **`lemlib::Chassis`** via **`chassis->chassis()`** or the **`Drive`** shortcuts in `include/subsystems/drive/Drive.h`.
 
-### Paths
+### Paths (LemLib pure pursuit)
 
-`drivetrain::Path` is a `std::vector` of `Waypoint` `{x, y}` in **inches**. Build a path in code, then `chassis->followPath(path, lookahead, timeout, ...)`.
+LemLib follows **static path files**, not `std::vector` waypoints. Put a path text file in **`static/`**, declare it with **`ASSET(myPath_txt)`** (dots → underscores), then call **`chassis->follow(myPath_txt, lookaheadIn, timeoutMs)`**. See [LemLib path following](https://lemlib.readthedocs.io/en/stable/tutorials/7_pure_pursuit.html).
 
 ---
 
-## 6. Advanced: drivetrain, geometry, and localization
+## 6. Advanced: LemLib, geometry, localization
 
-### `drivetrain::Chassis`
+### LemLib in this project
 
-Core implementation: `include/subsystems/drive/drivetrain/chassis.h` + `include/subsystems/drive/drivetrain/detail/chassis.inl.h`.
+- **Sources**: `include/lemlib/`, `src/lemlib/`, bundled **`include/fmt/`**.
+- **Configuration**: `include/subsystems/drive/DriveConstants.h` (ports, wheel/track dimensions, tracking wheel offsets, linear/angular controller gains, Expo curve inputs).
+- **Wrapper**: `Drive` constructs `pros::MotorGroup`, IMU, rotation sensors, `lemlib::TrackingWheel`, `lemlib::Drivetrain`, `lemlib::OdomSensors`, and `lemlib::Chassis` in `src/subsystems/drive/Drive.cpp`.
 
-- **ChassisConfig** — Motor ports, **0..N IMUs**, **0..N vertical + 0..N horizontal tracking wheels**, track width, wheel diameters. Treat this as **hardware truth**.
-- **Odometry** — Updated in `tick()` via LemLib-style fusion (multi-IMU circular mean, wheel-heading fallback, Pilons integration, IME fallback).
-- **Motions** — PID-based move/turn/swing/follow-path. Tunings live on member `Pid` objects in the class (advanced users adjust gains there).
+`Drive::periodic()` is a no-op; LemLib runs its own background tasks after **`chassis.calibrate()`**.
 
-`Drive::periodic()` runs the chassis tick. **MCL is currently decoupled** from the drive hot path while the drive stack is being rewritten; the runtime entrypoints still exist under `include/subsystems/drive/localization/mcl_runtime.h` and `src/subsystems/drive/localization/mcl_runtime.cpp`.
-
-Auton/teleop **commands** are built in **`include/commands/DriveCommands.h`**.
+Auton/teleop **commands** live in **`include/commands/DriveCommands.h`**.
 
 ### `utils/geom/`
 
@@ -189,20 +188,9 @@ Header-only 2D/3D math types (`Pose2d`, `Rotation2d`, `Transform2d`, etc.). Use 
 
 Umbrella include: **`utils/geom/geom.h`**.
 
-### Localization (MCL)
+### Localization beyond wheel + IMU odometry
 
-When **`drive_constants::kEnableMcl`** is `true`:
-
-- **Currently decoupled**: during the drive rewrite, MCL is **not** called from `Drive::periodic()` or `initialize()` by default.
-- **`localization_init_mcl(chassis)`** allocates the particle filter and distance sensor objects from **`drive_constants::kMclDistanceMounts`**.
-- **`localization_tick_mcl(chassis)`** performs predict+update+resample: predict particles with the odometry delta + motion noise, then apply **all** distance readings in one **log-likelihood** update (numerically stable), then **stochastic universal resampling** when effective sample size drops.
-- **`localization_get_mcl_estimate()`** returns a **`drivetrain::Pose`**: weighted mean for \(x,y\), **circular mean** for \(\theta\) via `atan2(Σ w sin θ, Σ w cos θ)` (better than linear averaging on heading).
-
-Tuning in **`subsystems/drive/DriveConstants.h`** (`namespace drive_constants`): field bounds, `kMclParticleCount`, motion sigmas (`kMclSigma*`), measurement sigma (`kMclSigmaMeasureIn`), **`kMclOutlierMaxIn` / `kMclOutlierLogPenalty`**, optional **`kMclResamplePosJitterIn` / `kMclResampleThetaJitterRad`**, invalid-mm threshold. Wrong map or mounts still looks like “bad GPS”—iterate on hardware.
-
-Background: particle filters and SUR are described clearly in [Aadish Verma’s MCL write-up](https://www.aadishv.dev/mcl) and [MCL 2: Resampling](https://www.aadishv.dev/mcl-2x). Another VEX-oriented codebase (LemLib + PROS) is [u-k-g/monte-carlo-localization](https://github.com/u-k-g/monte-carlo-localization)—useful for comparison, not a drop-in.
-
-Implementation files: `include/subsystems/drive/localization/mcl_filter.h`, `axis_aligned_raycast.h`, `mcl_runtime.h`, and `src/subsystems/drive/localization/mcl_runtime.cpp`.
+The previous template’s **Monte Carlo localization (MCL)** stack was removed when switching to LemLib. For particle-filter style localization on VEX, see community projects such as [u-k-g/monte-carlo-localization](https://github.com/u-k-g/monte-carlo-localization) and integrate against **`chassis->getPose()`** as your odometry prior.
 
 ---
 
@@ -212,14 +200,15 @@ Implementation files: `include/subsystems/drive/localization/mcl_filter.h`, `axi
 |------|------|
 | `src/main.cpp` | Competition entrypoints, scheduler, `autonomous()`, subsystem registration |
 | `include/main.h` | PROS, `RobotConstants.h`, `subsystems/subsystems.h`, `commands/DriveCommands.h`, utils |
-| `include/subsystems/` | One folder per mechanism; **`drive/`** = chassis + MCL; **`subsystems.h`** umbrella |
+| `include/subsystems/` | One folder per mechanism; **`drive/`** = LemLib wrapper + constants; **`subsystems.h`** umbrella |
+| `include/lemlib/`, `src/lemlib/` | LemLib library (vendored) |
 | `include/commands/` | **`DriveCommands.h`** and future `*Commands.h` files |
 | `include/RobotConstants.h` | Project-wide feature flags |
-| `include/utils/command/` | libcommand headers (vendored) |
+| `include/utils/command/` | Command scheduler + command types (header-only) |
 | `include/utils/geom/` | Geometry types |
-| `include/utils/units/` | Units; shim `include/units/units.hpp` |
+| `include/utils/control/` | Shared control helpers (e.g. PID) |
 | `include/utils/utils.h` | Shortcut: geom + drivetrain math |
-| `libraries/libcommand@0.1.8/` | Upstream reference copy |
+| `include/units/` | LemLib QUnits |
 | `project.pros` | PROS project metadata |
 
 ---

@@ -60,7 +60,7 @@ private:
 	Rotation2d m_r{};
 };
 
-/** Flat storage compatible with drivetrain::Pose (x, y, theta rad). */
+/** Flat storage (x, y, theta rad); same layout as `lemlib::Pose` for quick interop. */
 struct FlatPose2d {
 	double x = 0;
 	double y = 0;

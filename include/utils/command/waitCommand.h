@@ -1,5 +1,6 @@
 #pragma once
 
+#include "api.h"
 #include "command.h"
 #include "units/units.hpp"
 
@@ -7,15 +8,15 @@
  * @brief Creates a \refitem Command with no requirements that finishes after a user-specified duration
  */
 class WaitCommand : public Command {
-	units::QTime startTime;
-	units::QTime duration;
+	Time startTime{};
+	Time duration{};
 public:
 	/**
 	 * @brief Creates a new WaitCommand that runs for a user-specified duration
 	 *
-	 * @param duration The duration in QTime to run this \refitem Command
+	 * @param duration LemLib time quantity (e.g. `2_sec`, `500_msec`) for this \refitem Command
 	 */
-	explicit WaitCommand(const units::QTime &duration)
+	explicit WaitCommand(const Time &duration)
 		: duration(duration) {
 	}
 
@@ -23,7 +24,7 @@ public:
 	 * @brief Initializes the WaitCommand and sets the start time of the WaitCommand
 	 */
 	void initialize() override {
-		startTime = pros::millis() * units::millisecond;
+		startTime = from_msec(Number(static_cast<double>(pros::millis())));
 	}
 
 	/**
@@ -32,13 +33,13 @@ public:
 	 * @return Returns true if the duration has passed, false otherwise
 	 */
 	bool isFinished() override {
-		return pros::millis() * units::millisecond - startTime > duration;
+		return from_msec(Number(static_cast<double>(pros::millis()))) - startTime > duration;
 	}
 
 	~WaitCommand() override = default;
 };
 
-inline Command *Command::withTimeout(const units::QTime duration) {
+inline Command *Command::withTimeout(const Time duration) {
 	return new ParallelRaceGroup({new WaitCommand(duration), this});
 }
 

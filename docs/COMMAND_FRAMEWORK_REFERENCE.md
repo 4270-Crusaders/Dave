@@ -1,6 +1,6 @@
 # Command Framework Reference
 
-This document explains **CommandScheduler**, **Trigger**, **EventLoop**, and all **command types** in the **`include/utils/command/`** folder (vendored libcommand), plus **sequences** and **parallel groups**. Put **your** command classes under **`include/utils/commands/`**.
+This document explains **CommandScheduler**, **Trigger**, **EventLoop**, and all **command types** in **`include/utils/command/`** (header-only), plus **sequences** and **parallel groups**. Put **your** command factories under **`include/commands/`** (e.g. `DriveCommands.h`).
 
 ---
 
@@ -99,7 +99,7 @@ Helpers on `Command*`:
 
 ### 5.4 WaitCommand
 
-- **Role**: Command with **no requirements** that does nothing and finishes after a **duration** (e.g. `WaitCommand(2_s)`).
+- **Role**: Command with **no requirements** that does nothing and finishes after a **duration** (e.g. `WaitCommand(2_sec)`).
 - **Use when**: Delays in sequences, or with `withTimeout()` to limit how long another command can run.
 
 ### 5.5 WaitUntilCommand
@@ -159,7 +159,7 @@ Helpers on `Command*`:
   - `new ParallelRaceGroup({cmd1, cmd2})`
   - Or: `cmd1->race(cmd2)`.
 - **Use when**:
-  - **Time limit**: `command->withTimeout(3_s)` → race between `command` and `WaitCommand(3_s)`; when the timer wins, the other command is cancelled.
+  - **Time limit**: `command->withTimeout(3_sec)` → race between `command` and `WaitCommand(3_sec)`; when the timer wins, the other command is cancelled.
   - **Until condition**: `command->until([] { return condition(); })` → race between `command` and `WaitUntilCommand`; when the condition becomes true, the main command is cancelled.
 
 ---
